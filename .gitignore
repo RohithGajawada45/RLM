@@ -1,1 +1,5 @@
 .env
+uploads/*.pdf
+uploads/*.docx
+uploads/registry.json
+__pycache__/
