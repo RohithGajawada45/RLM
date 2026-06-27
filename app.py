@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Optional, List
 
 from fastapi import FastAPI, UploadFile, File, HTTPException, Form
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from dotenv import load_dotenv
@@ -331,6 +331,11 @@ class DocResponse(BaseModel):
 @app.get("/")
 def serve_frontend():
     return FileResponse("static/index.html")
+
+# Add this:
+@app.head("/")
+def serve_frontend_head():
+    return Response(status_code=200)
 
 @app.get("/api/docs")
 def list_docs():
