@@ -1,69 +1,78 @@
 # Document Concierge — Multi-Document RLM (Web)
 
-A web app that lets you upload PDF/DOCX files and ask questions. The system
-auto-describes each upload, routes your query to the right document(s), and
-runs the RLM algorithm to extract the answer.
+> Upload PDFs and DOCX files, ask any question, and get answers routed to the right document using the RLM algorithm.
 
-Solves two known limitations of the basic multi-doc RLM:
+---
 
-| # | Limitation | How this app fixes it |
+## What It Does
+
+Document Concierge is a web app that lets you build a personal document library and query it in natural language. When you ask a question:
+
+- The **advanced router** reads structured descriptions of every uploaded document and picks the most relevant one(s)
+- If the answer spans multiple documents, it runs a **fan-out RLM** across all of them and synthesises a combined answer
+- If no document is relevant, it tells you — no hallucinated answers
+
+### Problems This Solves
+
+| # | Limitation of basic multi-doc RLM | How this app fixes it |
 |---|---|---|
-| 1 | Cross-doc queries unsupported | Router can pick multiple docs → fan-out RLM + aggregate |
-| 2 | Routing accuracy depends on description quality | Confidence score + richer auto-descriptions (DOC_TYPE, SUBJECT, TIME_PERIOD, KEY_TERMS, SUMMARY) |
+| 1 | Cross-document queries not supported | Router can select multiple docs → fan-out RLM + aggregation |
+| 2 | Routing accuracy depends on description quality | Confidence scoring + structured auto-descriptions (5 fields per doc) |
+
+---
 
 ## Architecture
 
 ```
-|
-|    browser  <---->   FastAPI backend (app.py)
-|                         |
-|                         |
-|     ____________________|__________________
-|     |                   |                 |
-v     v                   v                 v
-/upload               /query             /docs
-• save file           • advanced_router  • list
-• extract text        • confidence + multi-doc
-• auto-describe (LM)  • single-doc RLM OR
-• persist to          fan-out + aggregate
-  uploads/registry.json
+Browser  ──────────────────  FastAPI backend (app.py)
+                                        │
+              ┌─────────────────────────┼──────────────────────┐
+              ▼                         ▼                       ▼
+          /upload                    /query                  /docs
+        • Save file             • advanced_router()         • List docs
+        • Extract text          • Confidence score          • (registry)
+        • Auto-describe (LM)    • Single-doc RLM  OR
+        • Persist to              Fan-out + aggregate
+          uploads/registry.json
 ```
 
-## File map
+---
 
-```text
+## File Map
+
+```
 rlm_web/
-├── rlm_core.py            # your existing RLM (unchanged)
-├── document_loader.py     # PDF + DOCX + TXT + MD extraction
-├── advanced_router.py     # multi-doc + confidence + rich descriptions
-├── cross_doc.py           # fan-out + aggregate logic
-├── registry.py            # dynamic, persistent doc registry
-├── app.py                 # FastAPI backend
+├── app.py                  # FastAPI backend — routes, upload handling, query orchestration
+├── rlm_core.py             # Core RLM algorithm (unchanged from base)
+├── document_loader.py      # PDF + DOCX + TXT + MD text extraction
+├── advanced_router.py      # Multi-doc routing with confidence scores + rich descriptions
+├── cross_doc.py            # Fan-out logic and answer aggregation
+├── registry.py             # Persistent document registry (JSON-backed)
 ├── static/
-│   ├── index.html         # single-page frontend
-│   ├── style.css          # editorial aesthetic (IBM Plex + warm cream)
-│   └── app.js             # upload, library, query logic
-└── uploads/               # auto-created; holds uploaded files + registry.json
+│   ├── index.html          # Single-page frontend
+│   ├── style.css           # UI styles (IBM Plex + warm cream aesthetic)
+│   └── app.js              # Upload, document library, and query logic
+└── uploads/                # Auto-created on first run; stores files + registry.json
 ```
+
+---
 
 ## Setup
 
-### 1. Install dependencies
+### 1. Install Python dependencies
 
 ```bash
 pip install fastapi uvicorn python-multipart python-docx \
             openai python-dotenv colorama pypdf
 ```
 
-`python-docx` is what makes DOCX support work. `pypdf` is the pure-Python PDF
-fallback (you should still have `pdftotext` installed via Poppler for table-heavy
-PDFs like 10-Ks; it's what `document_loader.py` tries first).
+> **Note:** `pypdf` is the pure-Python PDF fallback. For better accuracy on table-heavy PDFs (e.g. 10-Ks, annual reports), also install **Poppler** (`pdftotext`) — `document_loader.py` will prefer it automatically if available.
 
-### 2. Set up .env
+### 2. Create a `.env` file
 
-Create a `.env` file in the `rlm_web/` directory:
+Inside the `rlm_web/` directory, create a `.env` file:
 
-```bash
+```env
 AZURE_ENDPOINT=https://your-endpoint.openai.azure.com/
 AZURE_API_KEY=your-key-here
 AZURE_API_VERSION=2024-12-01-preview
@@ -71,60 +80,99 @@ ROOT_DEPLOYMENT=gpt-5-mini
 SUB_DEPLOYMENT=gpt-5-mini
 ```
 
-### 3. Run
+### 3. Run the server
 
 ```bash
 cd rlm_web
 uvicorn app:app --reload --port 8000
 ```
 
-Open http://localhost:8000 in your browser.
+Open **http://localhost:8000** in your browser.
 
-## How to use
+---
 
-1. **Upload** — drag PDF/DOCX/TXT/MD files onto the dropzone, or click to browse.
-   Each upload triggers one LM call (a few seconds) to write a structured
-   description. Files persist across server restarts.
+## How to Use
 
-2. **Ask** — type any question. The advanced router will:
-   - Pick ONE document if the answer lives in just one (`single_doc` mode).
-   - Pick MULTIPLE if the query is comparative ("Compare X to Y"; `fan_out` mode).
-   - Return `NONE` if no document is relevant.
+### Step 1 — Upload Documents
 
-3. **Response panel** shows:
-   - Which document(s) were chosen and why
-   - Confidence score with visual bar
-   - For fan-out: per-document findings, then the synthesised final answer
-   - Timings (route / RLM / total)
+Drag and drop PDF, DOCX, TXT, or MD files onto the dropzone (or click to browse).
 
-## Confidence threshold
+Each upload triggers one LM call to generate a structured description. This takes a few seconds but only happens once per file. Documents persist across server restarts.
 
-The backend treats router confidence below 0.4 as "no match" — see
-`CONFIDENCE_THRESHOLD` in `app.py`. Raise it for stricter routing, lower it
-to be more permissive.
+### Step 2 — Ask a Question
 
-## What's in a rich description
+Type your question in the query box. The router will automatically choose the best mode:
 
-Each uploaded doc gets a description with these fields, generated by one
-LM call at upload time:
+| Mode | When it activates | What happens |
+|---|---|---|
+| `single_doc` | Answer lives in one document | RLM runs on that document |
+| `fan_out` | Comparative or multi-source query | RLM runs on each relevant doc, answers are synthesised |
+| `none` | No relevant document found | Returns a clear no-match response |
 
-```text
-DOC_TYPE: <e.g. "SEC 10-K annual report">
-SUBJECT: <who/what; named entities>
-TIME_PERIOD: <dates if any>
-KEY_TERMS: <5-10 distinctive terms>
-SUMMARY: <one sentence>
+### Step 3 — Read the Response
+
+The response panel shows:
+- Which document(s) were selected and why
+- Confidence score with a visual bar
+- For fan-out queries: per-document findings + a synthesised final answer
+- Timing breakdown: route / RLM / total
+
+---
+
+## Configuration
+
+### Confidence Threshold
+
+Located in `app.py` as `CONFIDENCE_THRESHOLD` (default: `0.4`).
+
+- **Raise it** (e.g. `0.6`) → stricter routing; only high-confidence matches proceed
+- **Lower it** (e.g. `0.2`) → more permissive; useful when documents have overlapping topics
+
+### Other Limits
+
+| Setting | Default | Where to change |
+|---|---|---|
+| Max file size | 50 MB | `MAX_FILE_SIZE_MB` in `app.py` |
+| Accepted file types | `.pdf`, `.docx`, `.txt`, `.md` | `app.py` |
+| Max fan-out documents | 4 | Router prompt in `advanced_router.py` |
+
+> **Scalability note:** All uploaded documents are sent to the router on every query. This works well up to ~20 documents. Beyond that, consider adding an embedding pre-filter (see the RLM_MultiDoc.pdf paper, limitation #3).
+
+---
+
+## How Document Descriptions Work
+
+At upload time, one LM call generates a structured description for each file. The router uses these descriptions — not the full document text — to make routing decisions. This keeps routing fast and accurate.
+
+Each description has five fields:
+
+```
+DOC_TYPE:    e.g. "SEC 10-K annual report"
+SUBJECT:     Who or what the document is about (named entities)
+TIME_PERIOD: Relevant dates or fiscal periods, if any
+KEY_TERMS:   5–10 distinctive terms from the document
+SUMMARY:     One-sentence overview
 ```
 
-The router reads these to make routing decisions — they're what give it good
-accuracy without seeing the full document.
+Better descriptions = better routing. The richer field structure is what allows the router to distinguish between documents on similar topics.
 
-## Limits
+---
 
-- File size: 50 MB per upload (see `MAX_FILE_SIZE_MB` in `app.py`).
-- File types: `.pdf`, `.docx`, `.txt`, `.md`.
-- The router can pick up to 4 documents for a fan-out query (see the prompt
-  in `advanced_router.py`).
-- All uploaded documents are sent to the router on every query — this gets
-  expensive past ~20 docs. See the original RLM_MultiDoc.pdf section on
-  embedding pre-filter (limitation #3) for the production fix.
+## Dependencies Summary
+
+| Package | Purpose |
+|---|---|
+| `fastapi` + `uvicorn` | Web server |
+| `openai` | Azure OpenAI client |
+| `python-docx` | DOCX text extraction |
+| `pypdf` | PDF text extraction (pure Python fallback) |
+| `python-multipart` | File upload handling |
+| `python-dotenv` | `.env` config loading |
+| `colorama` | Coloured terminal output |
+| `poppler` (optional) | `pdftotext` for high-accuracy PDF extraction |
+
+---
+
+## Project Background
+
+This app is built on top of the RLM (Recursive Language Model) algorithm from Zhang, Kraska & Khattab (2026). The core `rlm_core.py` is unchanged from the base implementation. This project adds a web interface, multi-document routing, fan-out aggregation, and a persistent document registry on top of it.
