@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Document Concierge — Recursive LM</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700;&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/marked@12.0.0/marked.min.js" defer></script>
+</head>
+
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="22" height="22" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="4" y="3" width="14" height="18" rx="1.5"></rect>
+          <line x1="8" y1="8" x2="14" y2="8"></line>
+          <line x1="8" y1="12" x2="14" y2="12"></line>
+          <line x1="8" y1="16" x2="11" y2="16"></line>
+        </svg>
+      </span>
+
+      <div class="brand-text">
+        <span class="brand-title">Document Concierge</span>
+        <span class="brand-sub">Recursive LM · routes, reads, quotes verbatim</span>
+      </div>
+    </div>
+
+    <div class="topbar-meta">
+      <span class="meta-chip">
+        <span class="meta-num" id="meta-doc-count">0</span>
+        documents
+      </span>
+    </div>
+
+  </div>
+</header>
+
+<main class="page">
+
+  <!-- ASK — primary action at the top -->
+  <section class="block block-ask">
+
+    <div class="block-head">
+      <h2>Ask</h2>
+      <p class="block-sub">
+        Router picks documents · sub-LMs read in parallel · aggregator synthesizes.
+      </p>
+    </div>
+
+    <div class="ask-shell">
+
+      <textarea
+        id="query-input"
+        placeholder="Compare revenue of Adobe vs Tesla vs Infosys vs TCS"
+        rows="3"
+        aria-label="Question for the recursive language model"></textarea>
+
+      <div class="ask-controls">
+        <span class="ask-hint">⌘/Ctrl + Enter to submit</span>
+
+        <button id="ask-btn" class="btn-primary">
+          Ask
+          <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true">
+            <path d="M3 8h9.3l-3.6 3.6.7.7 4.7-4.7L9.4 2.9l-.7.7L12.3 7H3v1z"/>
+          </svg>
+        </button>
+
+      </div>
+
+    </div>
+
+    <div class="status-strip" id="status-bar" hidden></div>
+
+  </section>
+
+    <!-- RESPONSE -->
+  <section class="block block-response" id="response-card" hidden>
+
+    <div class="diagnostics" id="diagnostics">
+
+      <div class="diag-row diag-row-meta">
+
+        <div class="diag-cell">
+          <span class="diag-label">Mode</span>
+          <span class="diag-value" id="mode-value">—</span>
+        </div>
+
+        <div class="diag-cell">
+          <span class="diag-label">Documents</span>
+          <span class="diag-value" id="docs-value">—</span>
+        </div>
+
+        <div class="diag-cell">
+          <span class="diag-label">Confidence</span>
+          <span class="diag-value">
+            <span class="conf-num" id="conf-num">—</span>
+            <span class="conf-bar">
+              <span class="conf-fill" id="conf-fill"></span>
+            </span>
+          </span>
+        </div>
+
+        <div class="diag-cell diag-cell-iters">
+          <span class="diag-label">Iterations · calls</span>
+          <span class="diag-value" id="iter-count">—</span>
+        </div>
+
+      </div>
+
+      <div class="token-bar-wrap" id="token-bar-wrap">
+
+        <div class="token-bar-head">
+          <span class="token-bar-label">Token budget</span>
+          <span class="token-bar-total" id="token-total">—</span>
+
+          <span class="cache-badge" id="cache-badge" hidden>
+            <svg viewBox="0 0 16 16" width="11" height="11" fill="currentColor" aria-hidden="true">
+              <path d="M8 0a8 8 0 100 16A8 8 0 000 8zm-.5 11.5l-3-3 1-1 2 2 4-4 1 1-5 5z"/>
+            </svg>
+            Cached · 0 new tokens
+          </span>
+        </div>
+
+        <div class="token-bar" id="token-bar"></div>
+        <div class="token-bar-legend" id="token-bar-legend"></div>
+
+      </div>
+
+      <details class="diag-details" id="reason-details">
+        <summary>Router reasoning</summary>
+        <div class="reason-text" id="reason-text"></div>
+      </details>
+
+    </div>
+
+    <details class="perdoc-block" id="per-doc-panel" hidden>
+
+      <summary>
+        <span class="perdoc-summary-label">Per-document findings</span>
+        <span class="perdoc-summary-count" id="perdoc-count">0</span>
+      </summary>
+
+      <div class="perdoc-list" id="per-doc-list"></div>
+
+    </details>
+
+    <article class="answer" id="answer-panel">
+
+      <div class="answer-header">
+        <span class="answer-label">Answer</span>
+        <span class="timings" id="timings"></span>
+      </div>
+
+      <div class="prose" id="answer-text"></div>
+    </article>
+  </section>
+
+  <!-- LIBRARY -->
+  <section class="block block-library">
+    <div class="block-head">
+      <h2>Library</h2>
+      <p class="block-sub">
+        Drop a PDF, DOCX, TXT, or MD. The system reads each one and writes its own description.
+      </p>
+    </div>
+
+    <label for="file-input" class="dropzone" id="dropzone">
+      <input
+        type="file"
+        id="file-input"
+        accept=".pdf,.docx,.txt,.md"
+        multiple
+        hidden
+      >
+      <div class="dz-inner">
+        <svg
+          viewBox="0 0 24 24"
+          width="20"
+          height="20"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.5"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          class="dz-icon"
+        >
+          <path d="M12 3v12"></path>
+          <polyline points="7 8 12 3 17 8"></polyline>
+          <path d="M5 21h14"></path>
+        </svg>
+
+        <span class="dz-text">Drop files or <u>browse</u></span>
+        <span class="dz-hint">Up to 50 MB each</span>
+      </div>
+    </label>
+
+    <div class="upload-queue" id="upload-queue"></div>
+
+    <div class="library-grid" id="library">
+      <div class="empty-state">
+        No documents yet. Drop one above to start.
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="page-foot">
+  <span>Recursive LM · Zhang, Kraska, Khattab · MIT CSAIL · 2026</span>
+</footer>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
