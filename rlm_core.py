@@ -106,7 +106,7 @@ _NANO = os.environ.get("AZURE_GPT_5_NANO_DEPLOYMENT", "gpt-5-nano")
 ROOT_DEPLOYMENT = os.environ.get("AZURE_ROOT_DEPLOYMENT", _MINI)
 SUB_DEPLOYMENT = os.environ.get("AZURE_SUB_DEPLOYMENT", _MINI)
 
-EMBEDDING_DEPLOYMENT = os.environ.get("MBEDDING_DEPLOYMENT", "text-embedding-3-small")
+EMBEDDING_DEPLOYMENT = os.environ.get("EMBEDDING_DEPLOYMENT", "text-embedding-3-small")
 
 def embed_text(client: AzureOpenAI, text: str, deployment: str = EMBEDDING_DEPLOYMENT) -> Optional[list]:
     try:
