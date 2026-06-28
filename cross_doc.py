@@ -24,6 +24,13 @@ Sub-Answer Cache (Layer 3):
      Q2: "revenue of Adobe"          → RLM on adobe doc   → cached
      Q3: "revenue of Adobe and Infosys" → BOTH sub-answers from cache;
          only the aggregator call is new (one cheap LLM call).
+
+Cache persistence:
+   Sub-answers are persisted to cache/sub_answer_cache.pkl via
+   CachePersister (cache_persist.py), which provides:
+     • Background autosave every 60 s  → survives SIGKILL / kill -9
+     • atexit hook                      → saves on Ctrl+C / SIGTERM
+     • Load on startup                  → cache survives server restarts
 """
 
 import hashlib
@@ -34,8 +41,6 @@ import threading
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from typing import List, Dict, Any, Optional
-import atexit
-import pickle
 from pathlib import Path
 
 from rlm_core import (
@@ -43,12 +48,11 @@ from rlm_core import (
     get_token_usage, _enter_token_usage, _exit_token_usage,
     embed_text, EMBEDDING_DEPLOYMENT,
 )
+from cache_persist import CachePersister
 
 MAX_FANOUT_WORKERS = 4
 
 # ─── Registry: doc_id → company/entity names found in that doc ─────────────
-# Populated dynamically by _register_doc_companies() called from app.py
-# on upload. Used by _normalize_query_for_doc() to strip irrelevant names.
 _DOC_COMPANY_REGISTRY: Dict[str, List[str]] = {}
 _DCR_LOCK = threading.Lock()
 
@@ -91,66 +95,35 @@ def register_doc_companies(doc_id: str, doc_title: str, doc_text_preview: str = 
         "TOTAL","REVENUE","INCOME",
     }
 
-    # -------------------------------------------------------
-    # filename words
-    # -------------------------------------------------------
-
     filename_words = re.findall(r"[A-Za-z]+", doc_title)
-
     for w in filename_words:
         lw = w.lower()
-
         if len(lw) >= 3 and lw not in GENERIC_DOC_WORDS:
             terms.add(lw)
-
     if len(filename_words) >= 2:
         acronym = "".join(w[0] for w in filename_words).lower()
-
         if len(acronym) >= 2:
             terms.add(acronym)
 
-    # -------------------------------------------------------
-    # Consecutive company names
-    # -------------------------------------------------------
-
-    company_pattern = re.compile(
-        r"\b(?:[A-Z][a-z]{2,}\s+){1,5}[A-Z][a-z]{2,}\b"
-    )
-
+    company_pattern = re.compile(r"\b(?:[A-Z][a-z]{2,}\s+){1,5}[A-Z][a-z]{2,}\b")
     preview = doc_text_preview[:3000]
-
     for m in company_pattern.finditer(preview):
-
         phrase = m.group().strip()
-
         words = phrase.split()
-
         full = " ".join(w.lower() for w in words)
-
         terms.add(full)
-
         for w in words:
             lw = w.lower()
-
             if lw not in SKIP_TITLE:
                 terms.add(lw)
-
         acronym = "".join(w[0] for w in words).lower()
-
         if len(acronym) >= 2:
             terms.add(acronym)
-
         if full in KNOWN_ALIASES:
             terms.update(KNOWN_ALIASES[full])
 
-    # -------------------------------------------------------
-    # ALL CAPS
-    # -------------------------------------------------------
-
     for m in re.finditer(r"\b([A-Z]{3,})\b", preview):
-
         word = m.group(1)
-
         if word not in SKIP_CAPS:
             terms.add(word.lower())
 
@@ -164,20 +137,8 @@ def register_doc_companies(doc_id: str, doc_title: str, doc_text_preview: str = 
 def _normalize_query_for_doc(query: str, doc_id: str) -> str:
     """
     Produce a doc-scoped intent string from the user query.
-
-    Steps:
-      1. Lowercase.
-      2. Remove names of OTHER documents' companies/entities — not this doc's.
-         So "Adobe and Infosys revenue" for the infosys doc becomes
-         "Infosys revenue" (Adobe stripped).
-      3. Remove common English stopwords and question words.
-      4. Sort remaining content words for order-independence.
-
-    Result: "revenue infosys" for both
-      - "What is the total revenue of Infosys?"          (single-doc Q)
-      - "Give the total revenue of Adobe and Infosys"    (multi-doc Q, infosys slot)
-
-    This makes the cache key identical for paraphrased single→multi queries.
+    Strips other-document company names and stopwords, then sorts
+    remaining tokens for order-independence.
     """
     text = (
         query.lower()
@@ -186,7 +147,6 @@ def _normalize_query_for_doc(query: str, doc_id: str) -> str:
         .replace("-", " ")
     )
 
-    # Identify this doc's own terms and all other docs' terms
     with _DCR_LOCK:
         own_terms = set(_DOC_COMPANY_REGISTRY.get(doc_id, []))
         other_terms: set = set()
@@ -194,12 +154,10 @@ def _normalize_query_for_doc(query: str, doc_id: str) -> str:
             if did != doc_id:
                 other_terms.update(terms)
 
-    # Only strip terms that belong to OTHER docs (not shared with this doc)
     terms_to_strip = other_terms - own_terms
     for term in sorted(terms_to_strip, key=lambda x: (-len(x), x)):
         text = re.sub(rf'\b{re.escape(term)}\b', ' ', text)
 
-    # Strip stopwords and question words
     stopwords = {
         'what', 'is', 'are', 'was', 'were', 'the', 'of', 'give', 'me',
         'tell', 'how', 'much', 'did', 'and', 'or', 'for', 'a', 'an', 'in',
@@ -210,60 +168,75 @@ def _normalize_query_for_doc(query: str, doc_id: str) -> str:
     }
     tokens = re.findall(r'\b\w+\b', text)
     tokens = [t for t in tokens if t not in stopwords and len(t) >= 2]
-
-    # Sort for order-independence
     return ' '.join(sorted(set(tokens)))
 
 
-# ─── Per-doc sub-answer cache ───────────────────────────────────────────────
+# ─── Per-doc sub-answer cache ────────────────────────────────────────────────
 
 SUB_CACHE_MAX_ENTRIES = 500
-_SUB_CACHE: "OrderedDict[str, dict]" = OrderedDict()
+_SUB_CACHE: OrderedDict = OrderedDict()
 _SUB_CACHE_LOCK = threading.Lock()
-SUB_CACHE_SEMANTIC_THRESHOLD = 0.90  # for the embedding fallback
-CACHE_DIR = Path("cache")
-CACHE_DIR.mkdir(exist_ok=True)
+SUB_CACHE_SEMANTIC_THRESHOLD = 0.90
 
-SUB_CACHE_FILE = CACHE_DIR / "sub_answer_cache.pkl"
+# ── Persistence ──────────────────────────────────────────────────────────────
+
+def _set_sub_cache(new_data: OrderedDict) -> None:
+    """Replace the live sub-cache contents (used by CachePersister on load)."""
+    with _SUB_CACHE_LOCK:
+        _SUB_CACHE.clear()
+        _SUB_CACHE.update(new_data)
 
 
-def load_sub_cache() -> None:
-    global _SUB_CACHE
+_sub_persister = CachePersister(
+    path="cache/sub_answer_cache.pkl",
+    get_cache=lambda: _SUB_CACHE,
+    set_cache=_set_sub_cache,
+    label="sub-cache",
+)
 
-    if not SUB_CACHE_FILE.exists():
-        print("[sub-cache] No persisted cache found.")
-        return
+# Load persisted cache immediately at import time, then start autosave.
+# Order matters: load first so the autosave thread doesn't overwrite a
+# populated cache with an empty one on the very first tick.
+_sub_persister.load()
+_sub_persister.start()
 
-    try:
-        with open(SUB_CACHE_FILE, "rb") as f:
-            cache = pickle.load(f)
 
-        if isinstance(cache, OrderedDict):
-            with _SUB_CACHE_LOCK:
-                _SUB_CACHE = cache
-
-            print(f"[sub-cache] Loaded {len(cache)} cached sub-answers.")
-        else:
-            print("[sub-cache] Cache file ignored (unexpected format).")
-
-    except Exception as e:
-        print(f"[sub-cache] Failed to load cache: {e}")
-
+# ── Public save/clear helpers (called from app.py) ────────────────────────
 
 def save_sub_cache() -> None:
-    try:
-        # Take a snapshot while holding the lock briefly
-        with _SUB_CACHE_LOCK:
-            snapshot = OrderedDict(_SUB_CACHE)
+    """Explicit save — called from the FastAPI shutdown event as a belt-and-
+    suspenders save on top of the atexit hook."""
+    _sub_persister.save()
 
-        with open(SUB_CACHE_FILE, "wb") as f:
-            pickle.dump(snapshot, f, protocol=pickle.HIGHEST_PROTOCOL)
 
-        print(f"[sub-cache] Saved {len(snapshot)} cached sub-answers.")
+def _sub_cache_size() -> int:
+    with _SUB_CACHE_LOCK:
+        return len(_SUB_CACHE)
 
-    except Exception as e:
-        print(f"[sub-cache] Failed to save cache: {e}")
 
+def _sub_cache_clear() -> int:
+    with _SUB_CACHE_LOCK:
+        n = len(_SUB_CACHE)
+        _SUB_CACHE.clear()
+    # Persist the now-empty cache immediately so a restart doesn't reload
+    # stale data from the old file.
+    _sub_persister.save()
+    return n
+
+
+def _sub_cache_invalidate_for_doc(doc_id: str) -> int:
+    with _SUB_CACHE_LOCK:
+        keys_to_remove = [k for k, v in _SUB_CACHE.items()
+                          if v.get("doc_id") == doc_id]
+        for k in keys_to_remove:
+            del _SUB_CACHE[k]
+        n = len(keys_to_remove)
+    if n:
+        _sub_persister.save()
+    return n
+
+
+# ── Cache internals ───────────────────────────────────────────────────────
 
 def _sub_cache_key(normalized_intent: str, doc_id: str) -> str:
     canonical = f"{normalized_intent}|{doc_id}"
@@ -274,8 +247,7 @@ def _sub_cache_get(query: str, doc_id: str, client=None) -> Optional[dict]:
     """
     Two-level lookup:
       A) Exact: normalize query → hash → direct dict lookup (free).
-      B) Embedding fallback for near-synonyms that don't normalize identically
-         (e.g. "revenue" vs "revenues" after different stripping).
+      B) Embedding fallback for near-synonyms.
     """
     normalized = _normalize_query_for_doc(query, doc_id)
     key = _sub_cache_key(normalized, doc_id)
@@ -287,7 +259,6 @@ def _sub_cache_get(query: str, doc_id: str, client=None) -> Optional[dict]:
             print(f"  [sub-cache] EXACT HIT intent='{normalized}' doc={doc_id[:12]}")
             return entry
 
-    # Embedding fallback (only if client provided and cache is non-empty)
     if client is None:
         return None
 
@@ -323,7 +294,6 @@ def _sub_cache_put(query: str, doc_id: str, doc_title: str,
     normalized = _normalize_query_for_doc(query, doc_id)
     key = _sub_cache_key(normalized, doc_id)
 
-    # Embed the normalised intent (cheap — short string)
     emb = None
     if client is not None:
         emb = embed_text(client, normalized, EMBEDDING_DEPLOYMENT)
@@ -343,27 +313,6 @@ def _sub_cache_put(query: str, doc_id: str, doc_title: str,
             _SUB_CACHE.popitem(last=False)
 
     print(f"  [sub-cache] stored intent='{normalized}' for doc='{doc_title}'")
-
-
-def _sub_cache_size() -> int:
-    with _SUB_CACHE_LOCK:
-        return len(_SUB_CACHE)
-
-
-def _sub_cache_clear() -> int:
-    with _SUB_CACHE_LOCK:
-        n = len(_SUB_CACHE)
-        _SUB_CACHE.clear()
-        return n
-
-
-def _sub_cache_invalidate_for_doc(doc_id: str) -> int:
-    with _SUB_CACHE_LOCK:
-        keys_to_remove = [k for k, v in _SUB_CACHE.items()
-                          if v.get("doc_id") == doc_id]
-        for k in keys_to_remove:
-            del _SUB_CACHE[k]
-        return len(keys_to_remove)
 
 
 def _cosine_sim(a: list, b: list) -> float:
@@ -505,7 +454,7 @@ the audited-statement figures.
 """
 
 
-# ─── Main entry point ───────────────────────────────────────────────────────
+# ─── Main entry point ────────────────────────────────────────────────────────
 
 def run_cross_doc(
     query: str,
@@ -516,19 +465,6 @@ def run_cross_doc(
 ) -> Dict[str, Any]:
     """
     Fan out: run RLM on each doc, aggregate, with Layer-3 sub-cache.
-
-    Cache hit path (fast):
-      _sub_cache_get(query, doc_id) normalises the query to a doc-scoped
-      intent string. Single-doc and multi-doc queries that ask the same
-      thing about the same doc normalise identically → exact key hit →
-      sub-answer reused, RLM skipped.
-
-    Cache miss path (full):
-      rlm() runs on the doc, answer stored in sub-cache for future reuse.
-
-    Aggregation always runs (one cheap LLM call) since the synthesis
-    context (which other docs are involved, how to present comparison)
-    varies per query.
     """
     if not doc_ids:
         return {"final_answer": "(no documents to consult)", "per_doc": []}
@@ -536,7 +472,7 @@ def run_cross_doc(
     sub_query = SUBQUERY_TEMPLATE.format(query=query)
     parent_tracker = get_token_usage()
 
-    # ── Step 1: sub-cache lookup for each doc ───────────────────────────────
+    # ── Step 1: sub-cache lookup for each doc ────────────────────────────
 
     per_doc_results: List[Optional[dict]] = [None] * len(doc_ids)
     miss_indices: List[int] = []
@@ -556,7 +492,7 @@ def run_cross_doc(
         else:
             miss_indices.append(i)
 
-    # ── Step 2: RLM only for cache misses ───────────────────────────────────
+    # ── Step 2: RLM only for cache misses ────────────────────────────────
 
     def _process_doc(idx: int):
         did = doc_ids[idx]
@@ -603,7 +539,7 @@ def run_cross_doc(
 
     per_doc = [r for r in per_doc_results if r is not None]
 
-    # ── Step 3: aggregate ───────────────────────────────────────────────────
+    # ── Step 3: aggregate ─────────────────────────────────────────────────
 
     cache_hits = sum(1 for r in per_doc if r.get("from_cache"))
     if verbose and cache_hits:
@@ -625,5 +561,3 @@ def run_cross_doc(
     )
 
     return {"final_answer": final_answer, "per_doc": per_doc}
-
-load_sub_cache()

@@ -17,6 +17,7 @@ import time
 import traceback
 from pathlib import Path
 from typing import Optional, List
+from collections import OrderedDict
 
 from fastapi import FastAPI, UploadFile, File, HTTPException, Form
 from fastapi.responses import FileResponse, JSONResponse
@@ -34,112 +35,93 @@ from rlm_core import (
     embed_text, EMBEDDING_DEPLOYMENT,
 )
 from advanced_router import route_query_advanced
-from cross_doc import run_cross_doc, _sub_cache_invalidate_for_doc, _sub_cache_size, _sub_cache_clear, _sub_cache_put, register_doc_companies
+from cross_doc import (
+    run_cross_doc, _sub_cache_invalidate_for_doc,
+    _sub_cache_size, _sub_cache_clear, _sub_cache_put,
+    register_doc_companies,
+)
 from registry import DynamicRegistry
+from cache_persist import CachePersister
 
 
 # ─── Configuration ────────────────────────────────────────────────
 
 ALLOWED_EXTENSIONS = {".pdf", ".docx", ".txt", ".md"}
-MAX_FILE_SIZE_MB = 50  # per upload
-CONFIDENCE_THRESHOLD = 0.4  # below this, treat router output as NONE
-KEYWORD_FALLBACK_MAX_DOCS = 3  # at most this many docs surfaced via substring search
-KEYWORD_FALLBACK_CONFIDENCE = 0.5  # synthetic confidence reported when fallback fires
+MAX_FILE_SIZE_MB = 50
+CONFIDENCE_THRESHOLD = 0.4
+KEYWORD_FALLBACK_MAX_DOCS = 3
+KEYWORD_FALLBACK_CONFIDENCE = 0.5
 
 
-# ─── Result cache (zero-quality-risk repeat-query optimization) ───
-# Caches the final answer for (query, doc_set, doc_versions) tuples. A re-run
-# of the same query on the same library returns the same text at zero new
-# token cost. Cache is invalidated automatically when any participating doc is
-# replaced or deleted (because the doc id changes – registry hashes contents).
+# ─── Result cache (Layer 1 exact + Layer 2 semantic) ─────────────
 #
-# Toggle via env: CACHE_ENABLED=true|false (default: true)
-# Cap size via env: CACHE_MAX_ENTRIES (default: 200)
+# Persisted to cache/result_cache.pkl via CachePersister so it survives
+# server restarts, Ctrl+C, and (via periodic autosave) even kill -9.
 
 import hashlib
-import json
-from collections import OrderedDict
+import math
 
 CACHE_ENABLED = os.getenv("CACHE_ENABLED", "true").lower() == "true"
 CACHE_MAX_ENTRIES = int(os.getenv("CACHE_MAX_ENTRIES", "200"))
 
-# ─── Semantic cache (Layer 2) ─────────────────────────────────────
-# When the exact-match cache misses, fall through to a semantic lookup that
-# embeds the new query and compares against stored embeddings of previously
-# cached queries. If similarity to any cached entry exceeds the threshold AND
-# the doc_ids match exactly, that entry is served.
-#
-# Why exact doc_ids match: two semantically-similar queries can route to
-# different document sets ("TCS revenue" → [tcs]; "compare TCS to Infosys" →
-# [tcs, infosys]). The cached answer is bound to the doc set it was computed
-# different document sets ("TCS revenue" → [tcs]; "compare TCS to Infosys" →
-# [tcs, infosys]). The cached answer is bound to the doc set it was computed
-# from; serving the wrong one would be a real bug.
-#
-# Threshold tuning: 0.93 admits clear paraphrases ("What is TCS revenue?"
-# vs "Give TCS revenue") while rejecting topic-near but distinct queries
-# ("TCS revenue" vs "TCS profit"). Raise toward 0.95+ for stricter matching;
-# lower toward 0.90 for looser matching. Every semantic hit logs its score
-# so you can audit and tune.
-
-import math
-
 SEMANTIC_CACHE_ENABLED = os.getenv("SEMANTIC_CACHE_ENABLED", "true").lower() == "true"
 SEMANTIC_CACHE_THRESHOLD = float(os.getenv("SEMANTIC_CACHE_THRESHOLD", "0.93"))
 
+_RESULT_CACHE: OrderedDict = OrderedDict()
+
+
+def _set_result_cache(new_data: OrderedDict) -> None:
+    """Replace live result cache (used by CachePersister on load)."""
+    _RESULT_CACHE.clear()
+    _RESULT_CACHE.update(new_data)
+
+
+_result_persister = CachePersister(
+    path="cache/result_cache.pkl",
+    get_cache=lambda: _RESULT_CACHE,
+    set_cache=_set_result_cache,
+    label="result-cache",
+)
+# Load first, then start autosave thread.
+_result_persister.load()
+_result_persister.start()
+
+
+# ─── Cosine similarity helper ─────────────────────────────────────
 
 def _cosine_sim(a, b) -> float:
-    """Cosine similarity between two embedding vectors. Returns 0.0 on any
-    structural issue (mismatched dims, zero magnitudes, missing data)."""
     if not a or not b or len(a) != len(b):
         return 0.0
-
     dot = sum(x * y for x, y in zip(a, b))
     na = math.sqrt(sum(x * x for x in a))
     nb = math.sqrt(sum(y * y for y in b))
-
     if na == 0 or nb == 0:
         return 0.0
-
     return dot / (na * nb)
 
 
+# ─── Semantic cache lookup (Layer 2) ─────────────────────────────
+
 def _semantic_cache_lookup(query: str, doc_ids, client) -> Optional[dict]:
-    """Layer 2 cache: find a semantically-similar previously-cached entry
-    whose doc_ids match the current routing decision exactly. Returns the
-    cache entry dict on hit, or None on miss / disabled / API failure.
-
-    Side effects on hit:
-      - moves the entry to MRU position
-      - logs the similarity score and original cached query for auditability
-    """
-
     if not (SEMANTIC_CACHE_ENABLED and CACHE_ENABLED):
         return None
-
     if not _RESULT_CACHE:
         return None
 
     sorted_doc_ids = sorted(doc_ids)
-
-    # Pre-filter to entries with same routing decision AND a stored embedding.
-    # Old entries from before this feature won't have query_embedding; skip them.
     candidates = [
         (k, v) for k, v in _RESULT_CACHE.items()
         if sorted(v.get("doc_ids", [])) == sorted_doc_ids
         and v.get("query_embedding") is not None
     ]
-
     if not candidates:
         return None
 
-    # Only embed the new query if there's actually something to compare against.
     query_emb = embed_text(client, query, EMBEDDING_DEPLOYMENT)
     if query_emb is None:
-        return None  # API failure – fall through to normal RLM execution
+        return None
 
     best_key, best_entry, best_sim = None, None, 0.0
-
     for k, entry in candidates:
         sim = _cosine_sim(query_emb, entry["query_embedding"])
         if sim > best_sim:
@@ -152,14 +134,11 @@ def _semantic_cache_lookup(query: str, doc_ids, client) -> Optional[dict]:
             f"[semantic-cache] HIT sim={best_sim:.3f} "
             f">= {SEMANTIC_CACHE_THRESHOLD:.2f} + cached: '{cached_q[:70]}'"
         )
-        
-                # Stamp the entry with match info so the caller can surface it
-        best_entry = dict(best_entry)  # shallow copy so we don't mutate the cache
+        best_entry = dict(best_entry)
         best_entry["_semantic_match"] = {
             "similarity": round(best_sim, 4),
             "cached_query": cached_q,
         }
-
         return best_entry
 
     print(
@@ -169,57 +148,41 @@ def _semantic_cache_lookup(query: str, doc_ids, client) -> Optional[dict]:
     return None
 
 
-# OrderedDict gives us LRU semantics with move_to_end
-_RESULT_CACHE: "OrderedDict[str, dict]" = OrderedDict()
-
+# ─── Exact cache helpers ──────────────────────────────────────────
 
 def _cache_key(query: str, doc_ids) -> str:
-    """Stable key over (normalised query, sorted doc ids)."""
     canonical = f"{query.strip().lower()}||{';'.join(sorted(doc_ids))}"
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:32]
 
 
 def _cache_get(key: str):
-    """Return cached entry and refresh LRU order, or None if absent/disabled."""
     if not CACHE_ENABLED or key not in _RESULT_CACHE:
         return None
-
     _RESULT_CACHE.move_to_end(key)
     return _RESULT_CACHE[key]
 
 
 def _cache_put(key: str, payload: dict) -> None:
-    """Insert into cache; evict oldest if over capacity."""
     if not CACHE_ENABLED:
         return
-
     _RESULT_CACHE[key] = payload
     _RESULT_CACHE.move_to_end(key)
-
     while len(_RESULT_CACHE) > CACHE_MAX_ENTRIES:
         _RESULT_CACHE.popitem(last=False)
 
 
 def _cache_invalidate_for_doc(doc_id: str) -> int:
-    """Drop any cache entries that reference this doc id. Called on doc
-    upload/delete so stale answers don't survive a library change.
-    Returns the number of entries evicted."""
     evicted = 0
-
     for key in list(_RESULT_CACHE.keys()):
         if doc_id in _RESULT_CACHE[key].get("doc_ids", []):
             del _RESULT_CACHE[key]
             evicted += 1
-
+    if evicted:
+        _result_persister.save()
     return evicted
 
 
-# ─── Keyword fallback for routing failures ─────────────────────────
-# When the router returns NONE or low confidence, the LLM has not recognised any
-# query term against any document's rich description. This is the failure mode
-# for queries about entities the LLM has no training-data knowledge of (e.g. an
-# internal tool name) and that didn't surface in the 7KB sample used to build
-# descriptions. Before bailing out, try a cheap pure-Python substring search.
+# ─── Keyword fallback for routing failures ────────────────────────
 
 import re as _re
 
@@ -233,55 +196,33 @@ _STOPWORDS = {
     "all", "each", "every", "no", "not", "only", "very", "just", "also",
 }
 
-def _distinctive_terms(query: str) -> list:
-    """Pull out query terms worth substring-searching.
 
-    A term qualifies if it is NOT a stopword AND:
-      (a) at least 4 characters, OR
-      (b) length >= 3 and starts with an uppercase letter
-          (catches CamelCase product names, acronyms like XYZ, etc.)
-    """
+def _distinctive_terms(query: str) -> list:
     tokens = _re.findall(r"[A-Za-z][A-Za-z0-9_]+", query)
     out, seen = [], set()
-
     for t in tokens:
         low = t.lower()
-
         if low in seen:
             continue
-
         if low in _STOPWORDS:
             continue
-
         if len(t) >= 4 or (t[0].isupper() and len(t) >= 3):
             out.append(t)
             seen.add(low)
-
     return out
 
 
 def _keyword_fallback(query: str, registry) -> tuple:
-    """Substring-search every uploaded document for distinctive query terms.
-
-    Returns (doc_ids, hits_per_doc, terms_used). doc_ids is sorted by descending
-    total hit count and capped at KEYWORD_FALLBACK_MAX_DOCS. Empty tuple of
-    lists if no terms were distinctive enough to search, or no doc matched.
-    """
     terms = _distinctive_terms(query)
-
     if not terms:
         return [], {}, []
 
     hits = {}
-
     for doc_id, doc in registry.docs.items():
         text_lower = (doc.get("text") or "").lower()
-
         if not text_lower:
             continue
-
         n = sum(text_lower.count(t.lower()) for t in terms)
-
         if n > 0:
             hits[doc_id] = n
 
@@ -299,23 +240,30 @@ app = FastAPI(
     description="Upload documents, ask questions, get routed answers."
 )
 
-# Mount static files (the frontend)
 app.mount("/static", StaticFiles(directory="static"), name="static")
+
 
 @app.on_event("shutdown")
 async def shutdown_event():
+    """
+    Belt-and-suspenders save on graceful shutdown (SIGTERM, uvicorn --reload
+    file-change restart, etc.).  For hard kills (kill -9) the atexit hooks
+    registered by each CachePersister handle the save; for Ctrl+C the atexit
+    hook fires too.  The periodic autosave (every 60 s) is the safety net when
+    none of the above get a chance to run.
+    """
     print("=" * 60)
-    print("SHUTDOWN EVENT")
+    print("SHUTDOWN EVENT — saving caches")
     print("=" * 60)
-
     try:
+        _result_persister.save()
         save_sub_cache()
-        print("Cache saved successfully")
+        print("All caches saved successfully.")
     except Exception:
-        import traceback
         traceback.print_exc()
 
-# Initialize Azure client and registry (shared across requests)
+
+# Initialize Azure client and registry
 print("Initializing Azure client...")
 _client = make_azure_client()
 print(f"  Root LM: {ROOT_DEPLOYMENT}")
@@ -323,7 +271,7 @@ print(f"  Sub-LM: {SUB_DEPLOYMENT}")
 print("Loading registry...")
 _registry = DynamicRegistry(_client)
 print(f"  Loaded {len(_registry.docs)} document(s) on startup.")
-# Register company names for all docs already in the registry
+
 for _doc_id, _doc_entry in _registry.docs.items():
     register_doc_companies(
         doc_id=_doc_id,
@@ -353,6 +301,7 @@ class DocResponse(BaseModel):
 def serve_frontend():
     return FileResponse("static/index.html")
 
+
 @app.get("/api/docs")
 def list_docs():
     return {"docs": _registry.list_for_api()}
@@ -363,19 +312,15 @@ async def upload_doc(
     file: UploadFile = File(...),
     title: Optional[str] = Form(None)
 ):
-    # Validate extension
     ext = Path(file.filename).suffix.lower()
-
     if ext not in ALLOWED_EXTENSIONS:
         raise HTTPException(
             status_code=400,
             detail=f"Unsupported file type: {ext}. Allowed: {sorted(ALLOWED_EXTENSIONS)}"
         )
 
-    # Read bytes (with size check)
     contents = await file.read()
     size_mb = len(contents) / (1024 * 1024)
-
     if size_mb > MAX_FILE_SIZE_MB:
         raise HTTPException(
             status_code=413,
@@ -384,28 +329,21 @@ async def upload_doc(
 
     try:
         t0 = time.time()
-
         entry = _registry.add_uploaded_file(
             filename=file.filename,
             file_bytes=contents,
             title=title,
         )
-
-        # Register company/entity names for this doc so the sub-cache
-        # normaliser can strip irrelevant company names from queries.
         register_doc_companies(
             doc_id=entry["id"],
             doc_title=entry["title"],
             doc_text_preview=entry.get("text", "")[:3000],
         )
-
         elapsed = time.time() - t0
-
         print(
             f"[upload] '{file.filename}' "
             f"({entry['char_count']:,} chars, described in {elapsed:.1f}s)"
         )
-
         return {
             "id": entry["id"],
             "title": entry["title"],
@@ -415,7 +353,6 @@ async def upload_doc(
             "uploaded_at": entry["uploaded_at"],
             "elapsed": round(elapsed, 1),
         }
-
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Upload failed: {e}")
@@ -424,7 +361,6 @@ async def upload_doc(
 @app.delete("/api/docs/{doc_id}")
 def delete_doc(doc_id: str):
     ok = _registry.remove(doc_id)
-
     if not ok:
         raise HTTPException(status_code=404, detail="Document not found")
 
@@ -436,7 +372,6 @@ def delete_doc(doc_id: str):
             f"[cache] invalidated {evicted_main} main entr{'y' if evicted_main == 1 else 'ies'} "
             f"referencing deleted doc {doc_id}"
         )
-
     if evicted_sub:
         print(
             f"[sub-cache] invalidated {evicted_sub} sub-answer entr{'y' if evicted_sub == 1 else 'ies'} "
@@ -448,15 +383,11 @@ def delete_doc(doc_id: str):
 
 @app.get("/api/cache")
 def cache_stats():
-    """Return the result-cache state. The 'entries' array is ordered
-    most-recent-first so the frontend can use it for a 'recent queries' UI."""
-    # Order entries by cached_at desc (fall back to insertion order)
     entries_sorted = sorted(
         _RESULT_CACHE.items(),
         key=lambda kv: kv[1].get("cached_at", 0),
         reverse=True,
     )
-
     return {
         "enabled": CACHE_ENABLED,
         "max_entries": CACHE_MAX_ENTRIES,
@@ -479,46 +410,30 @@ def cache_stats():
 
 @app.delete("/api/cache")
 def cache_clear():
-    """Manually clear all cached results (both main result cache and per-doc sub-cache)."""
+    """Clear all cached results (both main result cache and per-doc sub-cache)."""
     main_n = len(_RESULT_CACHE)
     sub_n = _sub_cache_size()
     _RESULT_CACHE.clear()
+    _result_persister.save()   # persist the cleared state immediately
     _sub_cache_clear()
     return {"cleared": main_n, "sub_cleared": sub_n}
 
 
 @app.delete("/api/cache/{key_prefix}")
 def cache_delete_one(key_prefix: str):
-    """
-    Delete a single cache entry by key prefix.
-
-    Accepts the full sha256 key or any unique prefix (minimum 4 chars).
-    The trailing "…" shown in /api/cache stats output is stripped automatically
-    so users can paste directly from the entries list.
-
-    Errors:
-      400 - prefix too short (collision risk)
-      404 - no entry matches
-      409 - prefix matches multiple entries (provide more characters)
-    """
-
-    # Tolerate users pasting the truncated form "<12chars>…"
+    """Delete a single cache entry by key prefix."""
     key_prefix = key_prefix.rstrip("…").rstrip(".")
-
     if len(key_prefix) < 4:
         raise HTTPException(
             status_code=400,
             detail="key_prefix too short — provide at least 4 characters"
         )
-
     matches = [k for k in _RESULT_CACHE if k.startswith(key_prefix)]
-
     if len(matches) == 0:
         raise HTTPException(
             status_code=404,
             detail=f"No cache entry matches prefix '{key_prefix}'"
         )
-
     if len(matches) > 1:
         raise HTTPException(
             status_code=409,
@@ -527,18 +442,15 @@ def cache_delete_one(key_prefix: str):
                 f"provide more characters to disambiguate"
             )
         )
-
     key = matches[0]
     entry = _RESULT_CACHE.pop(key)
-
     saved = entry.get("tokens", {}).get("total", 0)
-
     print(
         f"[cache] deleted {key[:12]}… — query: "
         f"'{entry.get('query', '?')[:60]}' "
         f"(was saving ~{saved:,} tokens)"
     )
-
+    _result_persister.save()   # persist deletion immediately
     return {
         "deleted": True,
         "key": key,
@@ -547,14 +459,15 @@ def cache_delete_one(key_prefix: str):
         "tokens_freed": saved,
         "remaining": len(_RESULT_CACHE),
     }
-    
+
+
 @app.post("/api/query")
 def run_query(req: QueryRequest):
     query = req.query.strip()
     if not query:
         raise HTTPException(status_code=400, detail="Empty query.")
 
-    reset_token_usage()  # fresh accumulator for this request
+    reset_token_usage()
 
     if not _registry.docs:
         return JSONResponse({
@@ -571,7 +484,7 @@ def run_query(req: QueryRequest):
 
     total_t0 = time.time()
 
-    # —— STAGE 1: ROUTE ———————————————————————————————
+    # —— STAGE 1: ROUTE ———————————————————————————————————————————
     route_t0 = time.time()
     catalog = _registry.catalog_for_router()
     doc_ids, confidence, reason = route_query_advanced(
@@ -582,11 +495,6 @@ def run_query(req: QueryRequest):
     )
     route_elapsed = time.time() - route_t0
 
-    # Confidence guardrail — but before giving up, try keyword fallback.
-    # This catches the failure mode where the query is about a term the LLM
-    # has no training-data knowledge of AND the rich description happens to
-    # not mention it. Example: "what is XYZTool?" where XYZTool is an
-    # internal-only term mentioned a few times in one of the uploaded docs.
     router_uncertain = (not doc_ids) or (confidence < CONFIDENCE_THRESHOLD)
 
     if router_uncertain:
@@ -595,16 +503,13 @@ def run_query(req: QueryRequest):
         if fb_ids:
             doc_ids = fb_ids
             confidence = KEYWORD_FALLBACK_CONFIDENCE
-
             hit_summary = ", ".join(
                 f"{_registry.get(d)['title']}={fb_hits[d]}" for d in fb_ids
             )
-
             reason = (
                 f"Router was uncertain (original confidence {confidence:.2f}); "
                 f"keyword fallback found distinctive terms {fb_terms} in: {hit_summary}."
             )
-
             print(f"[keyword fallback] terms={fb_terms} -> docs={fb_ids}")
 
         elif doc_ids and confidence < CONFIDENCE_THRESHOLD:
@@ -615,7 +520,6 @@ def run_query(req: QueryRequest):
                 f"Original router reason: {reason}",
                 route_elapsed, "low_confidence",
             )
-
         else:
             return _no_answer_response(
                 query, doc_ids, confidence,
@@ -623,14 +527,10 @@ def run_query(req: QueryRequest):
                 route_elapsed, "no_match",
             )
 
-    # —— CACHE LOOKUP ————————————————————————————————
-    # Layered cache: exact text match first (free), then semantic fallback
-    # (one embedding call). Both layers require doc_ids to match the routing
-    # decision, so a reworded query that routes differently never reuses an
-    # unrelated answer.
+    # —— CACHE LOOKUP ————————————————————————————————————————————
     cache_key = _cache_key(query, doc_ids)
     cached = _cache_get(cache_key)
-    semantic_match_info = None  # populated only if Layer 2 hits
+    semantic_match_info = None
 
     if cached is None:
         cached = _semantic_cache_lookup(query, doc_ids, _client)
@@ -640,10 +540,8 @@ def run_query(req: QueryRequest):
     if cached is not None:
         saved = cached["tokens"]["total"]
         layer = "semantic" if semantic_match_info else "exact"
-
         print(f"[cache] HIT ({layer}) for query (saved ~{saved:,} tokens)")
 
-        # Build the cached-response note so the user can see which layer hit
         if semantic_match_info:
             note = (
                 f"\n\n*(served from cache – 0 new tokens · matched a "
@@ -676,13 +574,11 @@ def run_query(req: QueryRequest):
             },
         }
 
-    # —— STAGE 2: RLM ———————————————————————————————
+    # —— STAGE 2: RLM ————————————————————————————————————————————
     rlm_t0 = time.time()
 
     if len(doc_ids) == 1:
-        # Single-doc mode — direct RLM call
         doc = _registry.get(doc_ids[0])
-
         answer = rlm(
             context=doc["text"],
             query=query,
@@ -690,20 +586,12 @@ def run_query(req: QueryRequest):
             depth=0,
             verbose=True,
         )
-
         per_doc = [{
             "doc_id": doc_ids[0],
             "title": doc["title"],
             "sub_answer": answer
         }]
-
         mode = "single_doc"
-
-        # ── Layer 3 sub-cache write ──────────────────────────────────────
-        # New normalisation-based cache: strips other companies' names and
-        # stopwords before keying, so Q1='revenue of Infosys' and
-        # Q3='revenue of Adobe and Infosys' (for the infosys doc) both
-        # normalise to 'infosys revenue' → guaranteed exact key hit.
         _sub_cache_put(
             query=query,
             doc_id=doc_ids[0],
@@ -714,7 +602,6 @@ def run_query(req: QueryRequest):
         print(f"[sub-cache] stored answer for '{doc['title']}' — reusable by future multi-doc queries")
 
     else:
-        # Multi-doc fan-out
         result = run_cross_doc(
             query=query,
             doc_ids=doc_ids,
@@ -722,24 +609,16 @@ def run_query(req: QueryRequest):
             client=_client,
             verbose=True,
         )
-
         answer = result["final_answer"]
         per_doc = result["per_doc"]
         mode = "fan_out"
 
     rlm_elapsed = time.time() - rlm_t0
-
     total_elapsed = time.time() - total_t0
     usage = get_token_usage()
     answer_with_footer = (answer or "") + usage.footer()
 
-    # —— CACHE WRITE ————————————————————————————————
-    # Store the final answer keyed on (query, doc_ids). Subsequent identical
-    # queries against the same library will hit the cache at zero cost.
-    # We also persist query text, doc titles, and a timestamp so /api/cache
-    # can surface a useful "recent queries" list in the UI.
-    # Embed the query so the semantic cache layer can match reworded variants
-    # later. Embedding failure is non-fatal — entry still serves exact matches.
+    # —— CACHE WRITE ————————————————————————————————————————————
     query_embedding = None
     if SEMANTIC_CACHE_ENABLED:
         query_embedding = embed_text(_client, query, EMBEDDING_DEPLOYMENT)
@@ -753,8 +632,8 @@ def run_query(req: QueryRequest):
         "tokens": usage.to_dict(),
         "mode": mode,
         "cached_at": time.time(),
-        "query_original": query,          # alias used by semantic lookup
-        "query_embedding": query_embedding,  # for semantic matching; may be None
+        "query_original": query,
+        "query_embedding": query_embedding,
     })
 
     return {
@@ -780,7 +659,7 @@ def _no_answer_response(query, doc_ids, confidence, reason, route_elapsed, mode)
     return {
         "answer": (
             "No relevant document was found for this query. "
-            "Try uploading a document on this topic, or rephrasing the question."
+            "Try uploading a document on this topic, or rephrase the question."
         ),
         "routing": {
             "doc_ids": doc_ids,
