@@ -19,10 +19,11 @@ from pathlib import Path
 from typing import Optional, List
 
 from fastapi import FastAPI, UploadFile, File, HTTPException, Form
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from dotenv import load_dotenv
+from cross_doc import save_sub_cache
 
 load_dotenv()
 
@@ -33,7 +34,7 @@ from rlm_core import (
     embed_text, EMBEDDING_DEPLOYMENT,
 )
 from advanced_router import route_query_advanced
-from cross_doc import run_cross_doc, _sub_cache_invalidate_for_doc, _sub_cache_size, _sub_cache_clear
+from cross_doc import run_cross_doc, _sub_cache_invalidate_for_doc, _sub_cache_size, _sub_cache_clear, _sub_cache_put, register_doc_companies
 from registry import DynamicRegistry
 
 
@@ -301,6 +302,19 @@ app = FastAPI(
 # Mount static files (the frontend)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
+@app.on_event("shutdown")
+async def shutdown_event():
+    print("=" * 60)
+    print("SHUTDOWN EVENT")
+    print("=" * 60)
+
+    try:
+        save_sub_cache()
+        print("Cache saved successfully")
+    except Exception:
+        import traceback
+        traceback.print_exc()
+
 # Initialize Azure client and registry (shared across requests)
 print("Initializing Azure client...")
 _client = make_azure_client()
@@ -309,6 +323,13 @@ print(f"  Sub-LM: {SUB_DEPLOYMENT}")
 print("Loading registry...")
 _registry = DynamicRegistry(_client)
 print(f"  Loaded {len(_registry.docs)} document(s) on startup.")
+# Register company names for all docs already in the registry
+for _doc_id, _doc_entry in _registry.docs.items():
+    register_doc_companies(
+        doc_id=_doc_id,
+        doc_title=_doc_entry.get("title", ""),
+        doc_text_preview=_doc_entry.get("text", "")[:3000],
+    )
 
 
 # ─── Request/response models ──────────────────────────────────────
@@ -331,11 +352,6 @@ class DocResponse(BaseModel):
 @app.get("/")
 def serve_frontend():
     return FileResponse("static/index.html")
-
-# Add this:
-@app.head("/")
-def serve_frontend_head():
-    return Response(status_code=200)
 
 @app.get("/api/docs")
 def list_docs():
@@ -373,6 +389,14 @@ async def upload_doc(
             filename=file.filename,
             file_bytes=contents,
             title=title,
+        )
+
+        # Register company/entity names for this doc so the sub-cache
+        # normaliser can strip irrelevant company names from queries.
+        register_doc_companies(
+            doc_id=entry["id"],
+            doc_title=entry["title"],
+            doc_text_preview=entry.get("text", "")[:3000],
         )
 
         elapsed = time.time() - t0
@@ -674,6 +698,20 @@ def run_query(req: QueryRequest):
         }]
 
         mode = "single_doc"
+
+        # ── Layer 3 sub-cache write ──────────────────────────────────────
+        # New normalisation-based cache: strips other companies' names and
+        # stopwords before keying, so Q1='revenue of Infosys' and
+        # Q3='revenue of Adobe and Infosys' (for the infosys doc) both
+        # normalise to 'infosys revenue' → guaranteed exact key hit.
+        _sub_cache_put(
+            query=query,
+            doc_id=doc_ids[0],
+            doc_title=doc["title"],
+            sub_answer=answer,
+            client=_client,
+        )
+        print(f"[sub-cache] stored answer for '{doc['title']}' — reusable by future multi-doc queries")
 
     else:
         # Multi-doc fan-out

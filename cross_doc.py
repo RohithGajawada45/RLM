@@ -9,56 +9,375 @@ When the advanced router picks more than one document for a single query
 3. Aggregate the per-doc answers with one additional LM call.
 
 This is the classic MapReduce shape: fan out for facts, fold to synthesize.
+
+Sub-Answer Cache (Layer 3):
+   Caches per-doc RLM results keyed on (normalised_intent, doc_id).
+
+   The normalisation step is the key innovation:
+     "Give the total revenue of Adobe and Infosys" — for the Infosys doc —
+     normalises identically to "What is the total revenue of Infosys?"
+     because we strip other-company names and stopwords first, leaving
+     "infosys revenue" in both cases → guaranteed exact-key cache hit.
+
+   This means:
+     Q1: "revenue of Infosys"        → RLM on infosys doc → cached
+     Q2: "revenue of Adobe"          → RLM on adobe doc   → cached
+     Q3: "revenue of Adobe and Infosys" → BOTH sub-answers from cache;
+         only the aggregator call is new (one cheap LLM call).
 """
 
-from typing import List, Dict, Any
+import hashlib
+import math
 import re
+import time
+import threading
+from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
+from typing import List, Dict, Any, Optional
+import atexit
+import pickle
+from pathlib import Path
+
 from rlm_core import (
     rlm, llm_call,
     get_token_usage, _enter_token_usage, _exit_token_usage,
+    embed_text, EMBEDDING_DEPLOYMENT,
 )
 
-# Maximum number of per-document RLMs to run concurrently. Bounded to avoid
-# hitting Azure OpenAI's per-deployment tokens-per-minute (TPM) limit. The
-# OpenAI Python SDK is thread-safe; the bound is purely about rate limiting.
 MAX_FANOUT_WORKERS = 4
 
-# ─── Per-doc sub-answer cache — stub implementation ────────────────────────
-# Future feature: cache sub-RLM results keyed on (sub_query, doc_id) so the
-# same doc-level question doesn't re-run when it appears in different
-# multi-doc compositions. Not yet implemented — these are no-op stubs so
-# app.py's integration hooks (delete/clear/stats endpoints) work cleanly.
-# When the real implementation lands, replace these with the actual cache.
+# ─── Registry: doc_id → company/entity names found in that doc ─────────────
+# Populated dynamically by _register_doc_companies() called from app.py
+# on upload. Used by _normalize_query_for_doc() to strip irrelevant names.
+_DOC_COMPANY_REGISTRY: Dict[str, List[str]] = {}
+_DCR_LOCK = threading.Lock()
 
-_SUB_CACHE: Dict[str, Any] = {}
+
+KNOWN_ALIASES = {
+    "tata consultancy services": ["tcs"],
+    "international business machines": ["ibm"],
+    "hewlett packard": ["hp"],
+    "hewlett packard enterprise": ["hpe"],
+    "pricewaterhousecoopers": ["pwc"],
+    "procter gamble": ["pg", "p&g"],
+}
+
+
+def register_doc_companies(doc_id: str, doc_title: str, doc_text_preview: str = "") -> None:
+    terms = set()
+
+    GENERIC_DOC_WORDS = {
+        "annual", "report", "form", "fiscal", "year", "integrated",
+        "limited", "incorporated", "corp", "company", "group",
+        "holdings", "international", "document", "file", "copy",
+        "financial", "statement", "statements",
+    }
+
+    SKIP_TITLE = {
+        "securities","exchange","commission","united","states",
+        "washington","november","december","january","february",
+        "march","april","may","june","july","august",
+        "september","october","annual","report","fiscal",
+        "pursuant","section","form","exact","name",
+        "registrant","specified","charter","delaware",
+        "california","total","revenue","income",
+        "operations","building","integrated",
+    }
+
+    SKIP_CAPS = {
+        "FORM","PURSUANT","SECTION","SECURITIES",
+        "EXCHANGE","COMMISSION","UNITED","STATES",
+        "ANNUAL","REPORT","ITEM","PART",
+        "TOTAL","REVENUE","INCOME",
+    }
+
+    # -------------------------------------------------------
+    # filename words
+    # -------------------------------------------------------
+
+    filename_words = re.findall(r"[A-Za-z]+", doc_title)
+
+    for w in filename_words:
+        lw = w.lower()
+
+        if len(lw) >= 3 and lw not in GENERIC_DOC_WORDS:
+            terms.add(lw)
+
+    if len(filename_words) >= 2:
+        acronym = "".join(w[0] for w in filename_words).lower()
+
+        if len(acronym) >= 2:
+            terms.add(acronym)
+
+    # -------------------------------------------------------
+    # Consecutive company names
+    # -------------------------------------------------------
+
+    company_pattern = re.compile(
+        r"\b(?:[A-Z][a-z]{2,}\s+){1,5}[A-Z][a-z]{2,}\b"
+    )
+
+    preview = doc_text_preview[:3000]
+
+    for m in company_pattern.finditer(preview):
+
+        phrase = m.group().strip()
+
+        words = phrase.split()
+
+        full = " ".join(w.lower() for w in words)
+
+        terms.add(full)
+
+        for w in words:
+            lw = w.lower()
+
+            if lw not in SKIP_TITLE:
+                terms.add(lw)
+
+        acronym = "".join(w[0] for w in words).lower()
+
+        if len(acronym) >= 2:
+            terms.add(acronym)
+
+        if full in KNOWN_ALIASES:
+            terms.update(KNOWN_ALIASES[full])
+
+    # -------------------------------------------------------
+    # ALL CAPS
+    # -------------------------------------------------------
+
+    for m in re.finditer(r"\b([A-Z]{3,})\b", preview):
+
+        word = m.group(1)
+
+        if word not in SKIP_CAPS:
+            terms.add(word.lower())
+
+    with _DCR_LOCK:
+        _DOC_COMPANY_REGISTRY[doc_id] = sorted(terms)
+
+    print(f"[doc-registry] {doc_title}")
+    print(sorted(terms))
+
+
+def _normalize_query_for_doc(query: str, doc_id: str) -> str:
+    """
+    Produce a doc-scoped intent string from the user query.
+
+    Steps:
+      1. Lowercase.
+      2. Remove names of OTHER documents' companies/entities — not this doc's.
+         So "Adobe and Infosys revenue" for the infosys doc becomes
+         "Infosys revenue" (Adobe stripped).
+      3. Remove common English stopwords and question words.
+      4. Sort remaining content words for order-independence.
+
+    Result: "revenue infosys" for both
+      - "What is the total revenue of Infosys?"          (single-doc Q)
+      - "Give the total revenue of Adobe and Infosys"    (multi-doc Q, infosys slot)
+
+    This makes the cache key identical for paraphrased single→multi queries.
+    """
+    text = (
+        query.lower()
+        .replace("&", " and ")
+        .replace("/", " ")
+        .replace("-", " ")
+    )
+
+    # Identify this doc's own terms and all other docs' terms
+    with _DCR_LOCK:
+        own_terms = set(_DOC_COMPANY_REGISTRY.get(doc_id, []))
+        other_terms: set = set()
+        for did, terms in _DOC_COMPANY_REGISTRY.items():
+            if did != doc_id:
+                other_terms.update(terms)
+
+    # Only strip terms that belong to OTHER docs (not shared with this doc)
+    terms_to_strip = other_terms - own_terms
+    for term in sorted(terms_to_strip, key=lambda x: (-len(x), x)):
+        text = re.sub(rf'\b{re.escape(term)}\b', ' ', text)
+
+    # Strip stopwords and question words
+    stopwords = {
+        'what', 'is', 'are', 'was', 'were', 'the', 'of', 'give', 'me',
+        'tell', 'how', 'much', 'did', 'and', 'or', 'for', 'a', 'an', 'in',
+        'its', 'their', 'compare', 'vs', 'versus', 'between', 'annual',
+        'generate', 'generated', 'total', 'report', 'document', 'please',
+        'can', 'you', 'do', 'has', 'have', 'from', 'to', 'at', 'by',
+        'per', 'with', 'about', 'on', 'this', 'that', 'these', 'those',
+    }
+    tokens = re.findall(r'\b\w+\b', text)
+    tokens = [t for t in tokens if t not in stopwords and len(t) >= 2]
+
+    # Sort for order-independence
+    return ' '.join(sorted(set(tokens)))
+
+
+# ─── Per-doc sub-answer cache ───────────────────────────────────────────────
+
+SUB_CACHE_MAX_ENTRIES = 500
+_SUB_CACHE: "OrderedDict[str, dict]" = OrderedDict()
+_SUB_CACHE_LOCK = threading.Lock()
+SUB_CACHE_SEMANTIC_THRESHOLD = 0.90  # for the embedding fallback
+CACHE_DIR = Path("cache")
+CACHE_DIR.mkdir(exist_ok=True)
+
+SUB_CACHE_FILE = CACHE_DIR / "sub_answer_cache.pkl"
+
+
+def load_sub_cache() -> None:
+    global _SUB_CACHE
+
+    if not SUB_CACHE_FILE.exists():
+        print("[sub-cache] No persisted cache found.")
+        return
+
+    try:
+        with open(SUB_CACHE_FILE, "rb") as f:
+            cache = pickle.load(f)
+
+        if isinstance(cache, OrderedDict):
+            with _SUB_CACHE_LOCK:
+                _SUB_CACHE = cache
+
+            print(f"[sub-cache] Loaded {len(cache)} cached sub-answers.")
+        else:
+            print("[sub-cache] Cache file ignored (unexpected format).")
+
+    except Exception as e:
+        print(f"[sub-cache] Failed to load cache: {e}")
+
+
+def save_sub_cache() -> None:
+    try:
+        # Take a snapshot while holding the lock briefly
+        with _SUB_CACHE_LOCK:
+            snapshot = OrderedDict(_SUB_CACHE)
+
+        with open(SUB_CACHE_FILE, "wb") as f:
+            pickle.dump(snapshot, f, protocol=pickle.HIGHEST_PROTOCOL)
+
+        print(f"[sub-cache] Saved {len(snapshot)} cached sub-answers.")
+
+    except Exception as e:
+        print(f"[sub-cache] Failed to save cache: {e}")
+
+
+def _sub_cache_key(normalized_intent: str, doc_id: str) -> str:
+    canonical = f"{normalized_intent}|{doc_id}"
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:24]
+
+
+def _sub_cache_get(query: str, doc_id: str, client=None) -> Optional[dict]:
+    """
+    Two-level lookup:
+      A) Exact: normalize query → hash → direct dict lookup (free).
+      B) Embedding fallback for near-synonyms that don't normalize identically
+         (e.g. "revenue" vs "revenues" after different stripping).
+    """
+    normalized = _normalize_query_for_doc(query, doc_id)
+    key = _sub_cache_key(normalized, doc_id)
+
+    with _SUB_CACHE_LOCK:
+        if key in _SUB_CACHE:
+            _SUB_CACHE.move_to_end(key)
+            entry = _SUB_CACHE[key]
+            print(f"  [sub-cache] EXACT HIT intent='{normalized}' doc={doc_id[:12]}")
+            return entry
+
+    # Embedding fallback (only if client provided and cache is non-empty)
+    if client is None:
+        return None
+
+    with _SUB_CACHE_LOCK:
+        candidates = [v for v in _SUB_CACHE.values() if v["doc_id"] == doc_id
+                      and v.get("embedding") is not None]
+
+    if not candidates:
+        return None
+
+    q_emb = embed_text(client, normalized, EMBEDDING_DEPLOYMENT)
+    if q_emb is None:
+        return None
+
+    best, best_sim = None, 0.0
+    for entry in candidates:
+        sim = _cosine_sim(q_emb, entry["embedding"])
+        if sim > best_sim:
+            best_sim, best = sim, entry
+
+    if best_sim >= SUB_CACHE_SEMANTIC_THRESHOLD:
+        orig = best.get("original_query", "")[:60]
+        print(f"  [sub-cache] SEMANTIC HIT sim={best_sim:.3f} intent='{normalized}' "
+              f"matched='{orig}'")
+        return best
+
+    print(f"  [sub-cache] MISS intent='{normalized}' best_sim={best_sim:.3f}")
+    return None
+
+
+def _sub_cache_put(query: str, doc_id: str, doc_title: str,
+                   sub_answer: str, client=None) -> None:
+    normalized = _normalize_query_for_doc(query, doc_id)
+    key = _sub_cache_key(normalized, doc_id)
+
+    # Embed the normalised intent (cheap — short string)
+    emb = None
+    if client is not None:
+        emb = embed_text(client, normalized, EMBEDDING_DEPLOYMENT)
+
+    with _SUB_CACHE_LOCK:
+        _SUB_CACHE[key] = {
+            "sub_answer": sub_answer,
+            "doc_id": doc_id,
+            "doc_title": doc_title,
+            "original_query": query,
+            "normalized_intent": normalized,
+            "embedding": emb,
+            "cached_at": time.time(),
+        }
+        _SUB_CACHE.move_to_end(key)
+        while len(_SUB_CACHE) > SUB_CACHE_MAX_ENTRIES:
+            _SUB_CACHE.popitem(last=False)
+
+    print(f"  [sub-cache] stored intent='{normalized}' for doc='{doc_title}'")
 
 
 def _sub_cache_size() -> int:
-    """Number of entries in the per-doc sub-answer cache (currently always 0)."""
-    return len(_SUB_CACHE)
+    with _SUB_CACHE_LOCK:
+        return len(_SUB_CACHE)
 
 
 def _sub_cache_clear() -> int:
-    """Clear the sub-answer cache and return the number of entries evicted."""
-    n = len(_SUB_CACHE)
-    _SUB_CACHE.clear()
-    return n
+    with _SUB_CACHE_LOCK:
+        n = len(_SUB_CACHE)
+        _SUB_CACHE.clear()
+        return n
 
 
 def _sub_cache_invalidate_for_doc(doc_id: str) -> int:
-    """Evict any sub-cache entries that reference this document. Returns count."""
-    keys_to_remove = [k for k in _SUB_CACHE if doc_id in k]
-    for k in keys_to_remove:
-        del _SUB_CACHE[k]
-    return len(keys_to_remove)
+    with _SUB_CACHE_LOCK:
+        keys_to_remove = [k for k, v in _SUB_CACHE.items()
+                          if v.get("doc_id") == doc_id]
+        for k in keys_to_remove:
+            del _SUB_CACHE[k]
+        return len(keys_to_remove)
 
+
+def _cosine_sim(a: list, b: list) -> float:
+    if not a or not b or len(a) != len(b):
+        return 0.0
+    dot = sum(x * y for x, y in zip(a, b))
+    na = math.sqrt(sum(x * x for x in a))
+    nb = math.sqrt(sum(y * y for y in b))
+    return 0.0 if (na == 0 or nb == 0) else dot / (na * nb)
+
+
+# ─── Sub-query template ─────────────────────────────────────────────────────
 
 def _slugify(title: str) -> str:
-    """Derive a short label from a document title for the stage tag.
-    Examples: 'adbe2024annualreport.pdf' -> 'adbe',
-              'tcs_report.pdf' -> 'tcs',
-              'infosys-ar-25.pdf' -> 'infosys'."""
     base = title.rsplit(".", 1)[0]
     m = re.match(r"[A-Za-z]+", base)
     return (m.group() if m else base[:8]).lower()[:12]
@@ -138,7 +457,7 @@ When you have verified evidence, call FINAL(...) with:
 • The fact(s) you found, with at least one verbatim quote and its date.
 • OR: a clear statement that THIS document does not contain the
   requested information."""
-  
+
 AGGREGATION_PROMPT = """
 You are synthesizing answers from multiple documents.
 
@@ -185,6 +504,9 @@ letters or narrative rollups AND from audited financial statements, prefer
 the audited-statement figures.
 """
 
+
+# ─── Main entry point ───────────────────────────────────────────────────────
+
 def run_cross_doc(
     query: str,
     doc_ids: List[str],
@@ -193,53 +515,59 @@ def run_cross_doc(
     verbose: bool = True,
 ) -> Dict[str, Any]:
     """
-    Fan out: run RLM on each doc with a reframed sub-query, then aggregate.
+    Fan out: run RLM on each doc, aggregate, with Layer-3 sub-cache.
 
-    Args:
-        query: the original user query
-        doc_ids: the IDs the router chose
-        doc_lookup: dict mapping doc_id → {title, text, ...}
-        client: Azure client
+    Cache hit path (fast):
+      _sub_cache_get(query, doc_id) normalises the query to a doc-scoped
+      intent string. Single-doc and multi-doc queries that ask the same
+      thing about the same doc normalise identically → exact key hit →
+      sub-answer reused, RLM skipped.
 
-    Returns:
-        {
-            'final_answer': str,
-            'per_doc': [{'doc_id', 'title', 'sub_answer'}],
-        }
+    Cache miss path (full):
+      rlm() runs on the doc, answer stored in sub-cache for future reuse.
+
+    Aggregation always runs (one cheap LLM call) since the synthesis
+    context (which other docs are involved, how to present comparison)
+    varies per query.
     """
-
     if not doc_ids:
         return {"final_answer": "(no documents to consult)", "per_doc": []}
 
-    # Step 1 — per-document sub-RLM calls (PARALLEL)
-
-    # Run the per-doc RLMs concurrently in a thread pool. Each worker thread
-    # starts with an empty ContextVar context (Python's default), so we
-    # explicitly install the parent request's TokenUsage tracker via
-    # _enter_token_usage so all workers accumulate into the SAME tracker
-    # instance. TokenUsage.add() is lock-protected, so concurrent writes are
-    # safe. The OpenAI SDK is thread-safe per its docs.
-    #
-    # Each per-doc sub-RLM passes a unique stage_override (e.g. "fanout:adbe")
-    # so the footer shows a per-document token breakdown instead of one
-    # opaque "root_lm" bucket.
-    #
-    # Results from ex.map() preserve input order, matching the original
-    # sequential behaviour.
     sub_query = SUBQUERY_TEMPLATE.format(query=query)
     parent_tracker = get_token_usage()
 
-    def _process_doc(did: str):
+    # ── Step 1: sub-cache lookup for each doc ───────────────────────────────
+
+    per_doc_results: List[Optional[dict]] = [None] * len(doc_ids)
+    miss_indices: List[int] = []
+
+    for i, did in enumerate(doc_ids):
+        cached = _sub_cache_get(query, did, client=client)
+        if cached is not None:
+            if verbose:
+                print(f"  [sub-cache] HIT doc='{cached['doc_title']}' "
+                      f"intent='{cached.get('normalized_intent', '')}'")
+            per_doc_results[i] = {
+                "doc_id": did,
+                "title": cached["doc_title"],
+                "sub_answer": cached["sub_answer"],
+                "from_cache": True,
+            }
+        else:
+            miss_indices.append(i)
+
+    # ── Step 2: RLM only for cache misses ───────────────────────────────────
+
+    def _process_doc(idx: int):
+        did = doc_ids[idx]
         token = _enter_token_usage(parent_tracker)
         try:
             doc = doc_lookup.get(did)
             if not doc:
-                return None
+                return idx, None
 
             if verbose:
                 print(f"  [fan-out] running RLM on '{doc['title']}'...")
-
-            stage_label = f"fanout:{_slugify(doc['title'])}"
 
             sub_answer = rlm(
                 context=doc["text"],
@@ -247,43 +575,55 @@ def run_cross_doc(
                 client=client,
                 depth=0,
                 verbose=verbose,
-                stage_override=stage_label,
+                stage_override=f"fanout:{_slugify(doc['title'])}",
             )
 
-            return {
+            _sub_cache_put(
+                query=query,
+                doc_id=did,
+                doc_title=doc["title"],
+                sub_answer=sub_answer,
+                client=client,
+            )
+
+            return idx, {
                 "doc_id": did,
                 "title": doc["title"],
                 "sub_answer": sub_answer,
+                "from_cache": False,
             }
-
         finally:
             _exit_token_usage(token)
 
-    workers = max(1, min(MAX_FANOUT_WORKERS, len(doc_ids)))
-    with ThreadPoolExecutor(max_workers=workers) as ex:
-        per_doc = [r for r in ex.map(_process_doc, doc_ids) if r is not None]
+    if miss_indices:
+        workers = max(1, min(MAX_FANOUT_WORKERS, len(miss_indices)))
+        with ThreadPoolExecutor(max_workers=workers) as ex:
+            for idx, result in ex.map(_process_doc, miss_indices):
+                per_doc_results[idx] = result
 
-    # Step 2 — aggregate findings into one final answer
+    per_doc = [r for r in per_doc_results if r is not None]
+
+    # ── Step 3: aggregate ───────────────────────────────────────────────────
+
+    cache_hits = sum(1 for r in per_doc if r.get("from_cache"))
+    if verbose and cache_hits:
+        print(f"  [sub-cache] {cache_hits}/{len(per_doc)} sub-answers from cache "
+              f"— skipped {cache_hits} RLM call(s)")
+
+    if verbose:
+        print(f"  [fan-out] aggregating {len(per_doc)} sub-answers...")
+
     findings_text = "\n\n".join(
         f"=== From '{p['title']}' ({p['doc_id']}) ===\n{p['sub_answer']}"
         for p in per_doc
     )
 
-    if verbose:
-        print(f"  [fan-out] aggregating {len(per_doc)} sub-answers...")
-
-    aggregator_prompt = AGGREGATION_PROMPT.format(
-        query=query,
-        findings=findings_text,
-    )
-
     final_answer = llm_call(
-        aggregator_prompt,
+        AGGREGATION_PROMPT.format(query=query, findings=findings_text),
         client,
         label="aggregator",
     )
 
-    return {
-        "final_answer": final_answer,
-        "per_doc": per_doc,
-    }
+    return {"final_answer": final_answer, "per_doc": per_doc}
+
+load_sub_cache()
