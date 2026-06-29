@@ -7,7 +7,7 @@
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700;&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 
   <link rel="stylesheet" href="/static/style.css">
   <script src="https://cdn.jsdelivr.net/npm/marked@12.0.0/marked.min.js" defer></script>
@@ -20,11 +20,11 @@
 
     <div class="brand">
       <span class="brand-mark" aria-hidden="true">
-        <svg viewBox="0 0 24 24" width="22" height="22" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round">
-          <rect x="4" y="3" width="14" height="18" rx="1.5"></rect>
-          <line x1="8" y1="8" x2="14" y2="8"></line>
-          <line x1="8" y1="12" x2="14" y2="12"></line>
-          <line x1="8" y1="16" x2="11" y2="16"></line>
+        <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+          <polyline points="14 2 14 8 20 8"/>
+          <line x1="9" y1="13" x2="15" y2="13"/>
+          <line x1="9" y1="17" x2="13" y2="17"/>
         </svg>
       </span>
 
@@ -36,6 +36,11 @@
 
     <div class="topbar-meta">
       <span class="meta-chip">
+        <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true">
+          <rect x="2" y="2" width="12" height="12" rx="1.5"/>
+          <line x1="5" y1="6" x2="11" y2="6"/>
+          <line x1="5" y1="9" x2="9" y2="9"/>
+        </svg>
         <span class="meta-num" id="meta-doc-count">0</span>
         documents
       </span>
@@ -46,7 +51,7 @@
 
 <main class="page">
 
-  <!-- ASK — primary action at the top -->
+  <!-- ASK -->
   <section class="block block-ask">
 
     <div class="block-head">
@@ -60,12 +65,12 @@
 
       <textarea
         id="query-input"
-        placeholder="Compare revenue of Adobe vs Tesla vs Infosys vs TCS"
+        placeholder="Compare revenue of Adobe vs Tesla vs Infosys vs TCS…"
         rows="3"
         aria-label="Question for the recursive language model"></textarea>
 
       <div class="ask-controls">
-        <span class="ask-hint">⌘/Ctrl + Enter to submit</span>
+        <span class="ask-hint">⌘ / Ctrl + Enter to submit</span>
 
         <button id="ask-btn" class="btn-primary">
           Ask
@@ -82,7 +87,7 @@
 
   </section>
 
-    <!-- RESPONSE -->
+  <!-- RESPONSE -->
   <section class="block block-response" id="response-card" hidden>
 
     <div class="diagnostics" id="diagnostics">
@@ -162,6 +167,7 @@
 
       <div class="prose" id="answer-text"></div>
     </article>
+
   </section>
 
   <!-- LIBRARY -->
@@ -184,8 +190,8 @@
       <div class="dz-inner">
         <svg
           viewBox="0 0 24 24"
-          width="20"
-          height="20"
+          width="22"
+          height="22"
           fill="none"
           stroke="currentColor"
           stroke-width="1.5"
@@ -193,13 +199,13 @@
           stroke-linejoin="round"
           class="dz-icon"
         >
-          <path d="M12 3v12"></path>
-          <polyline points="7 8 12 3 17 8"></polyline>
-          <path d="M5 21h14"></path>
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+          <polyline points="17 8 12 3 7 8"/>
+          <line x1="12" y1="3" x2="12" y2="15"/>
         </svg>
 
         <span class="dz-text">Drop files or <u>browse</u></span>
-        <span class="dz-hint">Up to 50 MB each</span>
+        <span class="dz-hint">PDF · DOCX · TXT · MD · up to 50 MB each</span>
       </div>
     </label>
 
