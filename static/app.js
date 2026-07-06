@@ -44,8 +44,7 @@ function formatDate(iso) {
   }
 }
 
-// Pick an icon + accent color based on file extension, matching the
-// three looks the Stitch design already established.
+// Pick an icon + accent color based on file extension.
 function docIconFor(filename) {
   const ext = (filename || '').split('.').pop().toLowerCase();
   if (ext === 'pdf') return { icon: 'picture_as_pdf', color: 'text-secondary' };
@@ -123,21 +122,25 @@ function renderLibrary(docs) {
 
 function docCardHtml(d) {
   const { icon, color } = docIconFor(d.filename);
+  const ref = (d.id || '').slice(0, 8).toUpperCase();
+  const ext = (d.filename || '').split('.').pop().toUpperCase();
   return `
-    <div class="glass-panel rounded-xl p-[28px] flex flex-col h-full relative group">
-      <div class="flex justify-between items-start mb-4">
-        <div class="flex items-center gap-2 min-w-0">
-          <span class="material-symbols-outlined ${color}" data-icon="${icon}">${icon}</span>
-          <h4 class="font-headline-md text-headline-md text-on-surface truncate max-w-[150px]">${escapeHtml(d.title)}</h4>
-        </div>
-        <button class="text-text-muted hover:text-error transition-colors opacity-0 group-hover:opacity-100 p-1" data-action="delete" data-id="${escapeHtml(d.id)}" aria-label="Delete document">
-          <span class="material-symbols-outlined" data-icon="delete">delete</span>
+    <div class="glass-panel perforated card-lift rounded p-6 flex flex-col h-full relative group">
+      <div class="flex justify-between items-start mb-3">
+        <span class="font-data-num text-data-num text-text-muted tracking-wide">REF ${escapeHtml(ref)}</span>
+        <span class="font-data-num text-data-num px-1.5 py-0.5 rounded bg-primary/10 text-primary">${escapeHtml(ext)}</span>
+      </div>
+      <div class="flex items-center gap-2 min-w-0 mb-2">
+        <span class="material-symbols-outlined ${color} text-[20px]" data-icon="${icon}">${icon}</span>
+        <h4 class="font-headline-md text-headline-md text-on-surface truncate">${escapeHtml(d.title)}</h4>
+        <button class="ml-auto text-text-muted hover:text-error transition-colors opacity-0 group-hover:opacity-100 p-1 shrink-0" data-action="delete" data-id="${escapeHtml(d.id)}" aria-label="Delete document">
+          <span class="material-symbols-outlined text-[18px]" data-icon="delete">delete</span>
         </button>
       </div>
       <p class="font-body-sm text-body-sm text-text-muted mb-4 flex-grow line-clamp-3 whitespace-pre-line">${escapeHtml(d.description)}</p>
-      <div class="mt-auto pt-4 border-t border-glass-border flex justify-between items-center">
-        <span class="bg-primary/10 text-primary px-2 py-1 rounded font-data-num text-data-num">${formatChars(d.char_count)}</span>
-        <button class="text-primary hover:text-primary-container text-sm font-medium transition-colors" data-action="analyze" data-id="${escapeHtml(d.id)}">Analyze</button>
+      <div class="mt-auto pt-3 border-t border-glass-border flex justify-between items-center">
+        <span class="font-data-num text-data-num text-text-muted">${formatChars(d.char_count)} · ${formatDate(d.uploaded_at)}</span>
+        <button class="text-primary hover:text-primary-container text-sm font-medium transition-colors" data-action="analyze" data-id="${escapeHtml(d.id)}">Analyze →</button>
       </div>
     </div>
   `;
@@ -229,7 +232,7 @@ async function uploadOne(file) {
     iconEl.textContent = 'check_circle';
     iconEl.dataset.icon = 'check_circle';
     iconEl.classList.remove('text-primary');
-    iconEl.classList.add('text-[#2e7d32]');
+    iconEl.classList.add('text-[#3F6B4A]');
     row.querySelector('.ripple-active').classList.remove('ripple-active');
     statusEl.textContent = `Described in ${data.elapsed}s`;
     setTimeout(() => row.remove(), 4000);
@@ -638,7 +641,7 @@ function renderCache(stats) {
 }
 
 const MODE_CHIP = {
-  fan_out: { label: 'FAN-OUT', bg: 'bg-[#06B6D4]/10', text: 'text-fanout-seg', border: 'border-[#06B6D4]/20', dot: 'bg-fanout-seg' },
+  fan_out: { label: 'FAN-OUT', bg: 'bg-fanout-seg/10', text: 'text-fanout-seg', border: 'border-fanout-seg/20', dot: 'bg-fanout-seg' },
   single_doc: { label: 'SINGLE', bg: 'bg-primary/10', text: 'text-primary', border: 'border-primary/20', dot: 'bg-primary' },
 };
 

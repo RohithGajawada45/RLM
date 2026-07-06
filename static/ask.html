@@ -8,261 +8,50 @@
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com" rel="preconnect"/>
 <link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&amp;family=Plus+Jakarta+Sans:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet"/>
-<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,500&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
 <script defer="" src="https://cdn.jsdelivr.net/npm/marked@12.0.0/marked.min.js"></script>
-<script id="tailwind-config">
-        tailwind.config = {
-          darkMode: "class",
-          theme: {
-            extend: {
-              "colors": {
-                      "background": "#fcf8ff",
-                      "surface-container-highest": "#e5deff",
-                      "surface-container-lowest": "#ffffff",
-                      "on-tertiary-fixed-variant": "#653e00",
-                      "surface-variant": "#e5deff",
-                      "on-tertiary-container": "#ffecd9",
-                      "on-primary-container": "#f1ecff",
-                      "on-error-container": "#93000a",
-                      "secondary": "#af2a4b",
-                      "fanout-seg": "#06B6D4",
-                      "on-primary-fixed-variant": "#3c20ca",
-                      "on-secondary-fixed-variant": "#8e0c35",
-                      "surface-container": "#f0ebff",
-                      "on-secondary-container": "#6c0024",
-                      "inverse-primary": "#c5c0ff",
-                      "tertiary": "#774a00",
-                      "surface-container-low": "#f6f1ff",
-                      "text-muted": "#5C5480",
-                      "primary-container": "#6352f0",
-                      "primary-fixed": "#e4dfff",
-                      "surface-bright": "#fcf8ff",
-                      "accent-glow": "rgba(99, 82, 240, 0.22)",
-                      "on-error": "#ffffff",
-                      "tertiary-fixed-dim": "#ffb95f",
-                      "primary": "#4a34d7",
-                      "error": "#ba1a1a",
-                      "on-background": "#1b1831",
-                      "error-container": "#ffdad6",
-                      "on-surface": "#1b1831",
-                      "on-secondary-fixed": "#400012",
-                      "glass-border": "rgba(120, 110, 190, 0.14)",
-                      "secondary-fixed-dim": "#ffb2bc",
-                      "router-seg": "#6352F0",
-                      "on-surface-variant": "#474555",
-                      "secondary-container": "#ff6885",
-                      "surface-dim": "#dcd6f8",
-                      "surface-tint": "#5542e2",
-                      "outline-variant": "#c8c4d8",
-                      "primary-fixed-dim": "#c5c0ff",
-                      "surface": "#fcf8ff",
-                      "on-secondary": "#ffffff",
-                      "surface-container-high": "#ebe5ff",
-                      "on-tertiary-fixed": "#2a1700",
-                      "bg-cream": "#F7F3F0",
-                      "on-tertiary": "#ffffff",
-                      "on-primary": "#ffffff",
-                      "tertiary-fixed": "#ffddb8",
-                      "agg-seg": "#F59E0B",
-                      "bg-warm": "#FDFCFB",
-                      "outline": "#787587",
-                      "inverse-on-surface": "#f3eeff",
-                      "inverse-surface": "#302d47",
-                      "tertiary-container": "#986000",
-                      "on-primary-fixed": "#150067",
-                      "secondary-fixed": "#ffd9dd"
-              },
-              "borderRadius": {
-                      "DEFAULT": "0.25rem",
-                      "lg": "0.5rem",
-                      "xl": "0.75rem",
-                      "full": "9999px"
-              },
-              "spacing": {
-                      "gap-md": "16px",
-                      "gap-lg": "24px",
-                      "gap-sm": "12px",
-                      "gap-xs": "8px",
-                      "container-max": "880px",
-                      "base": "4px",
-                      "page-margin": "28px"
-              },
-              "fontFamily": {
-                      "body-lg": [
-                              "Plus Jakarta Sans"
-                      ],
-                      "data-num": [
-                              "JetBrains Mono"
-                      ],
-                      "headline-md": [
-                              "Plus Jakarta Sans"
-                      ],
-                      "headline-lg": [
-                              "Plus Jakarta Sans"
-                      ],
-                      "label-mono-bold": [
-                              "JetBrains Mono"
-                      ],
-                      "micro-label": [
-                              "JetBrains Mono"
-                      ],
-                      "body-sm": [
-                              "Plus Jakarta Sans"
-                      ]
-              },
-              "fontSize": {
-                      "body-lg": [
-                              "15px",
-                              {
-                                      "lineHeight": "24px",
-                                      "fontWeight": "400"
-                              }
-                      ],
-                      "data-num": [
-                              "12px",
-                              {
-                                      "lineHeight": "16px",
-                                      "fontWeight": "500"
-                              }
-                      ],
-                      "headline-md": [
-                              "18px",
-                              {
-                                      "lineHeight": "24px",
-                                      "fontWeight": "600"
-                              }
-                      ],
-                      "headline-lg": [
-                              "24px",
-                              {
-                                      "lineHeight": "32px",
-                                      "letterSpacing": "-0.02em",
-                                      "fontWeight": "700"
-                              }
-                      ],
-                      "label-mono-bold": [
-                              "11px",
-                              {
-                                      "lineHeight": "16px",
-                                      "letterSpacing": "0.14em",
-                                      "fontWeight": "600"
-                              }
-                      ],
-                      "micro-label": [
-                              "9px",
-                              {
-                                      "lineHeight": "12px",
-                                      "fontWeight": "500"
-                              }
-                      ],
-                      "body-sm": [
-                              "13px",
-                              {
-                                      "lineHeight": "20px",
-                                      "fontWeight": "400"
-                              }
-                      ]
-              }
-      },
-          },
-        }
-    </script>
-<style>
-        .aurora-bg {
-            background: linear-gradient(135deg, rgba(252, 248, 255, 0.8) 0%, rgba(247, 243, 240, 0.9) 100%);
-            position: fixed;
-            inset: 0;
-            z-index: -1;
-            overflow: hidden;
-        }
-        .aurora-bg::before {
-            content: '';
-            position: absolute;
-            top: -50%;
-            left: -50%;
-            width: 200%;
-            height: 200%;
-            background: radial-gradient(circle at 50% 50%, rgba(99, 82, 240, 0.05) 0%, transparent 50%),
-                        radial-gradient(circle at 20% 80%, rgba(6, 182, 212, 0.03) 0%, transparent 40%);
-            animation: aurora-shift 20s infinite linear;
-        }
-        @keyframes aurora-shift {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-        .glass-panel {
-            background-color: rgba(252, 248, 255, 0.6);
-            backdrop-filter: blur(16px) saturate(1.4);
-            border: 1px solid var(--tw-colors-glass-border);
-            box-shadow: 0 4px 6px -1px var(--tw-colors-accent-glow), 0 2px 4px -1px var(--tw-colors-accent-glow);
-        }
-        .glass-panel:hover {
-            backdrop-filter: blur(20px) saturate(1.5);
-            box-shadow: 0 10px 15px -3px var(--tw-colors-accent-glow), 0 4px 6px -2px var(--tw-colors-accent-glow);
-            transform: translateY(-1px);
-            transition: all 0.3s ease;
-        }
-        .ripple-pulse {
-            animation: pulse-ring 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-        }
-        @keyframes pulse-ring {
-            0% { transform: scale(0.8); opacity: 0.5; }
-            50% { transform: scale(1.5); opacity: 0; }
-            100% { transform: scale(0.8); opacity: 0; }
-        }
-        .token-bar-fill {
-            transform-origin: left;
-            animation: scale-x-in 1s cubic-bezier(0.4, 0, 0.2, 1) forwards;
-        }
-        @keyframes scale-x-in {
-            0% { transform: scaleX(0); }
-            100% { transform: scaleX(1); }
-        }
-    </style>
+<script src="/static/theme.js"></script>
+<link href="/static/theme.css" rel="stylesheet"/>
 </head>
 <body class="bg-background text-on-surface font-body-lg min-h-screen flex flex-col relative">
-<div class="aurora-bg"></div>
 <!-- TopNavBar -->
-<nav class="bg-background/80 backdrop-blur-xl dark:bg-background/80 fixed top-0 w-full z-50 border-b border-glass-border shadow-md shadow-accent-glow">
-<div class="flex justify-between items-center px-page-margin h-16 max-w-container-max mx-auto">
-<div class="font-headline-lg text-headline-lg font-bold tracking-tight text-primary dark:text-primary-fixed">
+<nav class="bg-background/95 fixed top-0 w-full z-50 border-b border-glass-border">
+<div class="flex items-end justify-between px-page-margin h-16 max-w-container-max mx-auto">
+<div class="font-headline-lg text-headline-lg font-semibold tracking-tight text-on-background pb-3">
                 Document Concierge
             </div>
-<div class="hidden md:flex gap-gap-lg">
-<a class="text-on-surface-variant font-medium hover:text-primary transition-colors hover:bg-surface-container-low transition-all duration-300 px-3 py-1 rounded-md active:scale-95 duration-200" href="/static/index.html">Library</a>
-<a class="text-primary font-bold border-b-2 border-primary pb-1 active:scale-95 duration-200" href="/static/ask.html">Ask</a>
-<a class="text-on-surface-variant font-medium hover:text-primary transition-colors hover:bg-surface-container-low transition-all duration-300 px-3 py-1 rounded-md active:scale-95 duration-200" href="/static/cache.html">Cache</a>
+<div class="hidden md:flex items-end gap-1 -mb-px">
+<a class="folder-tab px-4 py-2.5 font-body-lg text-[14px] text-text-muted hover:text-primary transition-colors" href="/static/index.html">Library</a>
+<a class="folder-tab active px-4 py-2.5 font-headline-md text-[15px] font-semibold text-on-surface border-l border-r border-t border-glass-border" href="/static/ask.html">Ask</a>
+<a class="folder-tab px-4 py-2.5 font-body-lg text-[14px] text-text-muted hover:text-primary transition-colors" href="/static/cache.html">Cache</a>
 </div>
-<div class="flex items-center gap-gap-md text-primary dark:text-primary-fixed font-body-lg text-body-lg">
-<button class="hover:bg-surface-container-low transition-all duration-300 p-2 rounded-full active:scale-95 duration-200">
+<div class="flex items-center gap-gap-md text-text-muted font-body-lg text-body-lg pb-3">
+<button class="hover:text-primary transition-colors p-2 rounded-full active:scale-95 duration-200">
 <span class="material-symbols-outlined" data-icon="notifications">notifications</span>
 </button>
-<button class="hover:bg-surface-container-low transition-all duration-300 p-2 rounded-full active:scale-95 duration-200">
+<button class="hover:text-primary transition-colors p-2 rounded-full active:scale-95 duration-200">
 <span class="material-symbols-outlined" data-icon="settings">settings</span>
 </button>
-<div class="w-8 h-8 rounded-full bg-surface-variant overflow-hidden border border-glass-border ml-2">
-<img alt="User profile" class="w-full h-full object-cover" data-alt="A minimalist, highly detailed abstract 3D rendering of a geometric crystal in deep blues and purples, acting as a user profile avatar placeholder, perfectly lit against a white studio background. Ethereal and sophisticated style." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCCMCw5gPmmOITbq-oSYqkNS_EKMnkz66xEZ7xcO8uvzJ2pWUVa4DlJMRllIY7wB1eqNPEM9HnWrHKJMmr03MAZr0D1a6EJTbxUw3LpTFLfbmtFGBl03tBMkEXDRK7tgZata8wrQ-R4kgblAkQCFvGv22guIBta6uzwDbufovP0PaDs4o0LfXdPJTCZ-5NjVVLfHUeKJRr0iNWgznyttF4bG9YCcDoeyn6IR55yllB-TQkAb7lEzmPa"/>
-</div>
+<div class="w-7 h-7 rounded-full bg-primary/15 border border-primary/30 ml-1"></div>
 </div>
 </div>
 </nav>
 <!-- Main Content Canvas -->
 <main class="flex-1 w-full max-w-container-max mx-auto px-page-margin pt-24 pb-32 flex flex-col gap-5">
 <!-- Query Input Block -->
-<section class="glass-panel rounded-xl p-7 flex flex-col gap-4">
+<section class="glass-panel rounded p-7 flex flex-col gap-4">
 <h1 class="font-headline-lg text-headline-lg text-on-surface">New Inquiry</h1>
 <div class="relative">
-<textarea class="w-full bg-cream border border-glass-border rounded-lg p-4 font-body-lg text-body-lg text-on-surface placeholder:text-text-muted focus:border-primary focus:ring-4 focus:ring-accent-glow focus:outline-none transition-all resize-none" id="query-input" placeholder="Ask a question..." rows="4"></textarea>
+<textarea class="w-full bg-cream border border-glass-border rounded p-4 font-body-lg text-body-lg text-on-surface placeholder:text-text-muted focus:border-primary focus:ring-4 focus:ring-accent-glow focus:outline-none transition-all resize-none" id="query-input" placeholder="Ask about your documents…" rows="4"></textarea>
 <div class="absolute bottom-4 right-4 flex items-center gap-3">
 <span class="font-data-num text-data-num text-text-muted">Cmd+Enter</span>
-<button class="bg-primary text-on-primary font-headline-md text-headline-md px-6 py-2 rounded-lg shadow-md shadow-accent-glow hover:bg-surface-tint active:scale-95 transition-all disabled:opacity-50" id="ask-btn">
+<button class="bg-primary text-on-primary font-headline-md text-headline-md px-6 py-2 rounded shadow-sm hover:bg-primary-container active:scale-95 transition-all disabled:opacity-50" id="ask-btn">
                         Ask
                     </button>
 </div>
 </div>
 <!-- Active State Loading Strip (hidden until a query is running) -->
-<div class="hidden items-center gap-3 p-3 bg-surface-container-low rounded-lg border border-glass-border mt-2" id="status-bar">
+<div class="hidden items-center gap-3 p-3 bg-surface-container-low rounded border border-glass-border mt-2" id="status-bar">
 <div class="relative w-3 h-3 flex items-center justify-center ml-1">
 <div class="absolute w-full h-full bg-primary rounded-full opacity-50 ripple-pulse"></div>
 <div class="w-2 h-2 bg-primary rounded-full z-10"></div>
@@ -272,22 +61,22 @@
 </section>
 <!-- Turn History (populated live by app.js) -->
 <section class="flex flex-col gap-5 mt-4" id="turn-history">
-<div class="text-center py-10 opacity-50 font-body-sm text-body-sm text-text-muted" id="turn-history-empty">
+<div class="text-center py-10 opacity-60 font-body-sm text-body-sm text-text-muted" id="turn-history-empty">
                 Ask your first question above.
             </div>
 </section>
 </main>
 <!-- Footer -->
-<footer class="bg-surface-container-lowest dark:bg-surface-dim w-full py-8 mt-auto border-t border-glass-border">
+<footer class="bg-surface-container-lowest w-full py-8 mt-auto border-t border-glass-border">
 <div class="flex flex-col md:flex-row justify-between items-center gap-gap-md px-page-margin max-w-container-max mx-auto">
 <div class="font-label-mono-bold text-label-mono-bold text-primary">
-                © 2024 Document Concierge. System v2.4.1-alpha
+                © 2024 Document Concierge · System v2.4.1-alpha
             </div>
 <div class="flex flex-wrap justify-center gap-gap-md font-body-sm text-body-sm text-text-muted">
-<a class="hover:text-primary transition-colors hover:opacity-80 transition-opacity duration-200" href="#">Privacy Policy</a>
-<a class="hover:text-primary transition-colors hover:opacity-80 transition-opacity duration-200" href="#">Terms of Service</a>
-<a class="hover:text-primary transition-colors hover:opacity-80 transition-opacity duration-200" href="#">API Documentation</a>
-<a class="hover:text-primary transition-colors hover:opacity-80 transition-opacity duration-200" href="#">Support</a>
+<a class="hover:text-primary transition-colors" href="#">Privacy Policy</a>
+<a class="hover:text-primary transition-colors" href="#">Terms of Service</a>
+<a class="hover:text-primary transition-colors" href="#">API Documentation</a>
+<a class="hover:text-primary transition-colors" href="#">Support</a>
 </div>
 </div>
 </footer>

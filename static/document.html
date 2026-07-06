@@ -9,212 +9,33 @@
 <!-- Google Fonts -->
 <link href="https://fonts.googleapis.com" rel="preconnect"/>
 <link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;600&amp;family=Plus+Jakarta+Sans:wght@400;600;700&amp;display=swap" rel="stylesheet"/>
-<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,500&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
 <!-- Tailwind CSS -->
 <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
-<!-- Tailwind Config -->
-<script id="tailwind-config">
-      tailwind.config = {
-        darkMode: "class",
-        theme: {
-          extend: {
-            "colors": {
-                    "background": "#fcf8ff",
-                    "surface-container-highest": "#e5deff",
-                    "surface-container-lowest": "#ffffff",
-                    "on-tertiary-fixed-variant": "#653e00",
-                    "surface-variant": "#e5deff",
-                    "on-tertiary-container": "#ffecd9",
-                    "on-primary-container": "#f1ecff",
-                    "on-error-container": "#93000a",
-                    "secondary": "#af2a4b",
-                    "fanout-seg": "#06B6D4",
-                    "on-primary-fixed-variant": "#3c20ca",
-                    "on-secondary-fixed-variant": "#8e0c35",
-                    "surface-container": "#f0ebff",
-                    "on-secondary-container": "#6c0024",
-                    "inverse-primary": "#c5c0ff",
-                    "tertiary": "#774a00",
-                    "surface-container-low": "#f6f1ff",
-                    "text-muted": "#5C5480",
-                    "primary-container": "#6352f0",
-                    "primary-fixed": "#e4dfff",
-                    "surface-bright": "#fcf8ff",
-                    "accent-glow": "rgba(99, 82, 240, 0.22)",
-                    "on-error": "#ffffff",
-                    "tertiary-fixed-dim": "#ffb95f",
-                    "primary": "#4a34d7",
-                    "error": "#ba1a1a",
-                    "on-background": "#1b1831",
-                    "error-container": "#ffdad6",
-                    "on-surface": "#1b1831",
-                    "on-secondary-fixed": "#400012",
-                    "glass-border": "rgba(120, 110, 190, 0.14)",
-                    "secondary-fixed-dim": "#ffb2bc",
-                    "router-seg": "#6352F0",
-                    "on-surface-variant": "#474555",
-                    "secondary-container": "#ff6885",
-                    "surface-dim": "#dcd6f8",
-                    "surface-tint": "#5542e2",
-                    "outline-variant": "#c8c4d8",
-                    "primary-fixed-dim": "#c5c0ff",
-                    "surface": "#fcf8ff",
-                    "on-secondary": "#ffffff",
-                    "surface-container-high": "#ebe5ff",
-                    "on-tertiary-fixed": "#2a1700",
-                    "bg-cream": "#F7F3F0",
-                    "on-tertiary": "#ffffff",
-                    "on-primary": "#ffffff",
-                    "tertiary-fixed": "#ffddb8",
-                    "agg-seg": "#F59E0B",
-                    "bg-warm": "#FDFCFB",
-                    "outline": "#787587",
-                    "inverse-on-surface": "#f3eeff",
-                    "inverse-surface": "#302d47",
-                    "tertiary-container": "#986000",
-                    "on-primary-fixed": "#150067",
-                    "secondary-fixed": "#ffd9dd"
-            },
-            "borderRadius": {
-                    "DEFAULT": "0.25rem",
-                    "lg": "0.5rem",
-                    "xl": "0.75rem",
-                    "full": "9999px"
-            },
-            "spacing": {
-                    "gap-md": "16px",
-                    "gap-lg": "24px",
-                    "gap-sm": "12px",
-                    "gap-xs": "8px",
-                    "container-max": "880px",
-                    "base": "4px",
-                    "page-margin": "28px"
-            },
-            "fontFamily": {
-                    "body-lg": [
-                            "Plus Jakarta Sans"
-                    ],
-                    "data-num": [
-                            "JetBrains Mono"
-                    ],
-                    "headline-md": [
-                            "Plus Jakarta Sans"
-                    ],
-                    "headline-lg": [
-                            "Plus Jakarta Sans"
-                    ],
-                    "label-mono-bold": [
-                            "JetBrains Mono"
-                    ],
-                    "micro-label": [
-                            "JetBrains Mono"
-                    ],
-                    "body-sm": [
-                            "Plus Jakarta Sans"
-                    ]
-            },
-            "fontSize": {
-                    "body-lg": [
-                            "15px",
-                            {
-                                    "lineHeight": "24px",
-                                    "fontWeight": "400"
-                            }
-                    ],
-                    "data-num": [
-                            "12px",
-                            {
-                                    "lineHeight": "16px",
-                                    "fontWeight": "500"
-                            }
-                    ],
-                    "headline-md": [
-                            "18px",
-                            {
-                                    "lineHeight": "24px",
-                                    "fontWeight": "600"
-                            }
-                    ],
-                    "headline-lg": [
-                            "24px",
-                            {
-                                    "lineHeight": "32px",
-                                    "letterSpacing": "-0.02em",
-                                    "fontWeight": "700"
-                            }
-                    ],
-                    "label-mono-bold": [
-                            "11px",
-                            {
-                                    "lineHeight": "16px",
-                                    "letterSpacing": "0.14em",
-                                    "fontWeight": "600"
-                            }
-                    ],
-                    "micro-label": [
-                            "9px",
-                            {
-                                    "lineHeight": "12px",
-                                    "fontWeight": "500"
-                            }
-                    ],
-                    "body-sm": [
-                            "13px",
-                            {
-                                    "lineHeight": "20px",
-                                    "fontWeight": "400"
-                            }
-                    ]
-            }
-          },
-        },
-      }
-    </script>
-<style>
-        body {
-            background-color: theme('colors.background');
-            background-image: radial-gradient(circle at top left, theme('colors.surface-container-high'), transparent 40%),
-                              radial-gradient(circle at bottom right, theme('colors.primary-fixed'), transparent 50%);
-            background-attachment: fixed;
-        }
-        .glass-panel {
-            background: rgba(255, 255, 255, 0.4);
-            backdrop-filter: blur(16px) saturate(1.4);
-            -webkit-backdrop-filter: blur(16px) saturate(1.4);
-            border: 1px solid theme('colors.glass-border');
-            box-shadow: 0 4px 6px -1px theme('colors.accent-glow');
-        }
-        .glass-panel:hover {
-            box-shadow: 0 10px 15px -3px theme('colors.accent-glow');
-            transform: translateY(-2px);
-            transition: all 0.3s ease;
-        }
-    </style>
+<script src="/static/theme.js"></script>
+<link href="/static/theme.css" rel="stylesheet"/>
 </head>
 <body class="text-on-surface font-body-lg min-h-screen flex flex-col relative overflow-x-hidden">
 <!-- TopNavBar: Document Detail (Task-focused, but keeping top bar for navigation back) -->
-<header class="bg-background/80 backdrop-blur-xl border-b border-glass-border shadow-md shadow-accent-glow fixed top-0 w-full z-50">
+<header class="bg-background/95 border-b border-glass-border fixed top-0 w-full z-50">
 <div class="flex justify-between items-center px-page-margin h-16 max-w-container-max mx-auto">
 <div class="flex items-center gap-gap-md">
-<a class="flex items-center gap-2 text-on-surface-variant hover:text-primary transition-colors duration-300 font-body-lg text-body-lg group" href="/static/index.html">
+<a class="flex items-center gap-2 text-text-muted hover:text-primary transition-colors duration-300 font-body-lg text-body-lg group" href="/static/index.html">
 <span class="material-symbols-outlined text-[20px] group-hover:-translate-x-1 transition-transform">arrow_back</span>
 <span>Back to Library</span>
 </a>
 </div>
-<div class="font-headline-lg text-headline-lg font-bold tracking-tight text-primary">
+<div class="font-headline-lg text-headline-lg font-semibold tracking-tight text-on-background">
                 Document Concierge
             </div>
 <div class="flex items-center gap-gap-sm">
-<button aria-label="notifications" class="p-2 rounded-full hover:bg-surface-container-low transition-all duration-300 active:scale-95 text-on-surface-variant hover:text-primary">
+<button aria-label="notifications" class="p-2 rounded-full hover:text-primary transition-all duration-300 active:scale-95 text-text-muted">
 <span class="material-symbols-outlined" data-icon="notifications">notifications</span>
 </button>
-<button aria-label="settings" class="p-2 rounded-full hover:bg-surface-container-low transition-all duration-300 active:scale-95 text-on-surface-variant hover:text-primary">
+<button aria-label="settings" class="p-2 rounded-full hover:text-primary transition-all duration-300 active:scale-95 text-text-muted">
 <span class="material-symbols-outlined" data-icon="settings">settings</span>
 </button>
-<div class="w-8 h-8 rounded-full overflow-hidden border border-glass-border ml-2">
-<img alt="User profile" class="w-full h-full object-cover" data-alt="A small, circular abstract avatar image in light mode featuring a soft glowing orb in shades of violet and white, representing an ethereal AI user profile." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBTbr6RMpdVObdzQRppwFDYseI4SK1mOyn48w_i18A4VY19XV-gvk677PkidGUNwNWfqXiSZLX50cY3S63pybLo0hE5XdLrig8-8etWvmjj2iPgQScm6bxBrJ2ShKUl9gSxs1PW0uYPn4LAr-XyOuBzfkzbzKKCSo4H-UG-ns3M-UUQ3inKIs4oeKj22LWU1m640YdhT-1meMebZm2am5B-ZLmmenx4qysdbu-IdlWLQwHE8rQmZ0s1"/>
-</div>
+<div class="w-7 h-7 rounded-full bg-primary/15 border border-primary/30 ml-2"></div>
 </div>
 </div>
 </header>
@@ -223,9 +44,9 @@
 <!-- Document Content Canvas -->
 <article class="flex-grow flex flex-col gap-gap-md">
 <!-- Header Block -->
-<div class="glass-panel rounded-xl p-[28px]">
+<div class="glass-panel perforated rounded p-[28px]">
 <div class="flex items-start gap-4 mb-4">
-<div class="p-3 bg-surface-container rounded-lg text-primary">
+<div class="p-3 bg-primary/10 rounded text-primary">
 <span class="material-symbols-outlined text-3xl" data-weight="fill" id="doc-icon">description</span>
 </div>
 <div class="min-w-0">
@@ -234,13 +55,13 @@
 <div class="flex gap-2 flex-wrap">
 <span class="px-2 py-1 rounded bg-primary/10 text-primary font-data-num text-data-num border border-glass-border" id="doc-type-badge">—</span>
 <span class="px-2 py-1 rounded bg-secondary/10 text-secondary font-data-num text-data-num border border-glass-border" id="doc-charcount-badge">—</span>
-<span class="px-2 py-1 rounded bg-accent-glow text-primary font-data-num text-data-num border border-glass-border" id="doc-uploaded-badge">—</span>
+<span class="px-2 py-1 rounded bg-tertiary-container/20 text-tertiary font-data-num text-data-num border border-glass-border" id="doc-uploaded-badge">—</span>
 </div>
 </div>
 </div>
 </div>
 <!-- Description Block (the backend's own generated description — the only content it actually returns) -->
-<div class="glass-panel rounded-xl p-[28px] flex flex-col gap-6">
+<div class="glass-panel rounded p-[28px] flex flex-col gap-6">
 <section>
 <h2 class="font-headline-md text-headline-md text-on-surface mb-3 flex items-center gap-2">
 <span class="material-symbols-outlined text-primary text-[20px]">subject</span>
@@ -254,7 +75,7 @@
 </article>
 <!-- Sidebar / Metadata -->
 <aside class="w-full md:w-64 flex-shrink-0 flex flex-col gap-gap-md">
-<div class="glass-panel rounded-xl p-6 flex flex-col gap-6">
+<div class="glass-panel rounded p-6 flex flex-col gap-6">
 <h3 class="font-label-mono-bold text-label-mono-bold text-text-muted uppercase tracking-wider mb-2">Metadata</h3>
 <div class="flex flex-col gap-4">
 <div>
@@ -273,12 +94,12 @@
 <hr class="border-glass-border"/>
 <!-- Delete Action Area -->
 <div class="mt-2" id="delete-container">
-<button class="w-full py-3 px-4 rounded-lg bg-transparent border border-error/30 text-error font-body-sm text-body-sm font-semibold hover:bg-error/10 hover:border-error transition-colors flex items-center justify-center gap-2 group" id="btn-delete">
+<button class="w-full py-3 px-4 rounded bg-transparent border border-error/30 text-error font-body-sm text-body-sm font-semibold hover:bg-error/10 hover:border-error transition-colors flex items-center justify-center gap-2 group" id="btn-delete">
 <span class="material-symbols-outlined text-[18px] group-hover:scale-110 transition-transform">delete</span>
                         Delete Document
                     </button>
 <!-- Warning State (Hidden by default) -->
-<div class="hidden flex-col gap-3 mt-3 p-3 bg-error-container/50 border border-error/20 rounded-lg" id="delete-warning">
+<div class="hidden flex-col gap-3 mt-3 p-3 bg-error-container/50 border border-error/20 rounded" id="delete-warning">
 <span class="font-body-sm text-body-sm text-on-error-container font-semibold text-center">Are you sure?</span>
 <div class="flex gap-2">
 <button class="flex-1 py-1.5 bg-surface-container-lowest text-text-muted border border-glass-border rounded font-body-sm text-body-sm hover:bg-surface-container transition-colors" id="btn-cancel">Cancel</button>
@@ -296,17 +117,17 @@
 <p class="font-body-sm text-body-sm text-text-muted">It may have been deleted, or the link is missing an id.</p>
 <a class="text-primary font-medium hover:underline mt-2" href="/static/index.html">Back to Library</a>
 </div>
-<!-- Footer: Task-focused pages technically don't need shell, but JSON specifies Footer. Including as per JSON exactness, but keeping it minimal. -->
+<!-- Footer -->
 <footer class="bg-surface-container-lowest border-t border-glass-border w-full py-8 mt-auto">
 <div class="flex flex-col md:flex-row justify-between items-center gap-gap-md px-page-margin max-w-container-max mx-auto">
 <div class="font-label-mono-bold text-label-mono-bold text-primary">
-                © 2024 Document Concierge. System v2.4.1-alpha
+                © 2024 Document Concierge · System v2.4.1-alpha
             </div>
 <nav class="flex gap-4">
-<a class="font-body-sm text-body-sm text-text-muted hover:text-primary transition-colors duration-200 hover:opacity-80" href="#">Privacy Policy</a>
-<a class="font-body-sm text-body-sm text-text-muted hover:text-primary transition-colors duration-200 hover:opacity-80" href="#">Terms of Service</a>
-<a class="font-body-sm text-body-sm text-text-muted hover:text-primary transition-colors duration-200 hover:opacity-80" href="#">API Documentation</a>
-<a class="font-body-sm text-body-sm text-text-muted hover:text-primary transition-colors duration-200 hover:opacity-80" href="#">Support</a>
+<a class="font-body-sm text-body-sm text-text-muted hover:text-primary transition-colors duration-200" href="#">Privacy Policy</a>
+<a class="font-body-sm text-body-sm text-text-muted hover:text-primary transition-colors duration-200" href="#">Terms of Service</a>
+<a class="font-body-sm text-body-sm text-text-muted hover:text-primary transition-colors duration-200" href="#">API Documentation</a>
+<a class="font-body-sm text-body-sm text-text-muted hover:text-primary transition-colors duration-200" href="#">Support</a>
 </nav>
 </div>
 </footer>
