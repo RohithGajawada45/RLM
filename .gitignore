@@ -4,3 +4,4 @@ uploads/*.docx
 uploads/registry.json
 __pycache__/
 .DS_Store
+cache/*.pkl

@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Cache Inspector - Document Concierge</title>
+<!-- Google Fonts -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;600&amp;family=Plus+Jakarta+Sans:wght@400;600;700&amp;display=swap" rel="stylesheet"/>
+<!-- Material Symbols -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Tailwind CSS -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<!-- Tailwind Configuration -->
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "background": "#fcf8ff",
+                        "surface-container-highest": "#e5deff",
+                        "surface-container-lowest": "#ffffff",
+                        "on-tertiary-fixed-variant": "#653e00",
+                        "surface-variant": "#e5deff",
+                        "on-tertiary-container": "#ffecd9",
+                        "on-primary-container": "#f1ecff",
+                        "on-error-container": "#93000a",
+                        "secondary": "#af2a4b",
+                        "fanout-seg": "#06B6D4",
+                        "on-primary-fixed-variant": "#3c20ca",
+                        "on-secondary-fixed-variant": "#8e0c35",
+                        "surface-container": "#f0ebff",
+                        "on-secondary-container": "#6c0024",
+                        "inverse-primary": "#c5c0ff",
+                        "tertiary": "#774a00",
+                        "surface-container-low": "#f6f1ff",
+                        "text-muted": "#5C5480",
+                        "primary-container": "#6352f0",
+                        "primary-fixed": "#e4dfff",
+                        "surface-bright": "#fcf8ff",
+                        "accent-glow": "rgba(99, 82, 240, 0.22)",
+                        "on-error": "#ffffff",
+                        "tertiary-fixed-dim": "#ffb95f",
+                        "primary": "#4a34d7",
+                        "error": "#ba1a1a",
+                        "on-background": "#1b1831",
+                        "error-container": "#ffdad6",
+                        "on-surface": "#1b1831",
+                        "on-secondary-fixed": "#400012",
+                        "glass-border": "rgba(120, 110, 190, 0.14)",
+                        "secondary-fixed-dim": "#ffb2bc",
+                        "router-seg": "#6352F0",
+                        "on-surface-variant": "#474555",
+                        "secondary-container": "#ff6885",
+                        "surface-dim": "#dcd6f8",
+                        "surface-tint": "#5542e2",
+                        "outline-variant": "#c8c4d8",
+                        "primary-fixed-dim": "#c5c0ff",
+                        "surface": "#fcf8ff",
+                        "on-secondary": "#ffffff",
+                        "surface-container-high": "#ebe5ff",
+                        "on-tertiary-fixed": "#2a1700",
+                        "bg-cream": "#F7F3F0",
+                        "on-tertiary": "#ffffff",
+                        "on-primary": "#ffffff",
+                        "tertiary-fixed": "#ffddb8",
+                        "agg-seg": "#F59E0B",
+                        "bg-warm": "#FDFCFB",
+                        "outline": "#787587",
+                        "inverse-on-surface": "#f3eeff",
+                        "inverse-surface": "#302d47",
+                        "tertiary-container": "#986000",
+                        "on-primary-fixed": "#150067",
+                        "secondary-fixed": "#ffd9dd"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "gap-md": "16px",
+                        "gap-lg": "24px",
+                        "gap-sm": "12px",
+                        "gap-xs": "8px",
+                        "container-max": "880px",
+                        "base": "4px",
+                        "page-margin": "28px"
+                    },
+                    "fontFamily": {
+                        "body-lg": ["Plus Jakarta Sans"],
+                        "data-num": ["JetBrains Mono"],
+                        "headline-md": ["Plus Jakarta Sans"],
+                        "headline-lg": ["Plus Jakarta Sans"],
+                        "label-mono-bold": ["JetBrains Mono"],
+                        "micro-label": ["JetBrains Mono"],
+                        "body-sm": ["Plus Jakarta Sans"]
+                    },
+                    "fontSize": {
+                        "body-lg": ["15px", { "lineHeight": "24px", "fontWeight": "400" }],
+                        "data-num": ["12px", { "lineHeight": "16px", "fontWeight": "500" }],
+                        "headline-md": ["18px", { "lineHeight": "24px", "fontWeight": "600" }],
+                        "headline-lg": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "label-mono-bold": ["11px", { "lineHeight": "16px", "letterSpacing": "0.14em", "fontWeight": "600" }],
+                        "micro-label": ["9px", { "lineHeight": "12px", "fontWeight": "500" }],
+                        "body-sm": ["13px", { "lineHeight": "20px", "fontWeight": "400" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        /* Ambient Aurora Background Effect */
+        body {
+            background-color: #fcf8ff;
+            background-image: 
+                radial-gradient(at 0% 0%, rgba(99, 82, 240, 0.08) 0px, transparent 50%),
+                radial-gradient(at 100% 0%, rgba(6, 182, 212, 0.05) 0px, transparent 50%),
+                radial-gradient(at 100% 100%, rgba(99, 82, 240, 0.05) 0px, transparent 50%),
+                radial-gradient(at 0% 100%, rgba(245, 158, 11, 0.03) 0px, transparent 50%);
+            background-attachment: fixed;
+        }
+
+        /* Glass Block Base Class */
+        .glass-block {
+            background-color: rgba(255, 255, 255, 0.6);
+            backdrop-filter: blur(16px) saturate(1.4);
+            -webkit-backdrop-filter: blur(16px) saturate(1.4);
+            border: 1px solid rgba(120, 110, 190, 0.14);
+            box-shadow: 0 4px 6px -1px rgba(99, 82, 240, 0.22), 0 2px 4px -1px rgba(99, 82, 240, 0.12);
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col text-on-background font-body-lg antialiased">
+<!-- TopNavBar (Shared Component) -->
+<nav class="fixed top-0 w-full z-50 bg-background/80 backdrop-blur-xl border-b border-glass-border shadow-md shadow-accent-glow">
+<div class="flex justify-between items-center px-page-margin h-16 max-w-container-max mx-auto">
+<!-- Brand -->
+<div class="font-headline-lg text-headline-lg font-bold tracking-tight text-primary">
+                Document Concierge
+            </div>
+<!-- Navigation Links -->
+<div class="hidden md:flex space-x-8">
+<a class="font-body-lg text-body-lg text-on-surface-variant font-medium hover:text-primary transition-colors py-1" href="/static/index.html">Library</a>
+<a class="font-body-lg text-body-lg text-on-surface-variant font-medium hover:text-primary transition-colors py-1" href="/static/ask.html">Ask</a>
+<!-- Active Navigation State for 'Cache' -->
+<a class="font-body-lg text-body-lg text-primary font-bold border-b-2 border-primary pb-1" href="/static/cache.html">Cache</a>
+</div>
+<!-- Trailing Icons -->
+<div class="flex items-center space-x-4 text-primary">
+<button class="p-2 hover:bg-surface-container-low transition-all duration-300 rounded-full active:scale-95 duration-200">
+<span class="material-symbols-outlined">notifications</span>
+</button>
+<button class="p-2 hover:bg-surface-container-low transition-all duration-300 rounded-full active:scale-95 duration-200">
+<span class="material-symbols-outlined">settings</span>
+</button>
+<button class="w-8 h-8 rounded-full bg-surface-container-highest border border-glass-border overflow-hidden active:scale-95 duration-200">
+<img alt="User profile" class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAfT4nTiAnCeeF6PaN_DwvR1gUyZ6J8kb1LzT2ZONQXVko7M_2rCgZBsSgT8Healju5Di2eoyo2sM7QALSeX8AX-Hwi3cSSG6yBY_eZwccwH5NNJIWzO0EahskF0gBQKhmftxP7vJBW4HpjcXpQ7iCn0Pkf3omiYB2YkkpHcJyw4-RGfZEGu7gIROYhoA3DyIsopX0IcIasRjD7uRwu2J3p-bda6num3aBsXLttr64VH9sjKnnu-zOV"/>
+</button>
+</div>
+</div>
+</nav>
+<!-- Main Content -->
+<main class="flex-grow w-full max-w-container-max mx-auto px-page-margin mt-32 mb-20 flex flex-col gap-[20px]">
+<!-- Header Section -->
+<header class="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-4">
+<div>
+<h1 class="font-headline-lg text-headline-lg text-on-background mb-2">Cache Inspector</h1>
+<div class="flex items-center gap-3 flex-wrap">
+<span class="font-label-mono-bold text-label-mono-bold text-primary bg-primary-fixed border border-primary-fixed-dim px-2.5 py-1 rounded-full" id="cache-total-badge">
+                        0 TOTAL ENTRIES
+                    </span>
+<span class="font-label-mono-bold text-label-mono-bold text-tertiary-container bg-tertiary-fixed border border-tertiary-fixed-dim px-2.5 py-1 rounded-full" id="cache-tokens-badge">
+                        0 TOKENS SAVED
+                    </span>
+<span class="font-label-mono-bold text-label-mono-bold text-on-surface-variant bg-surface-container-high border border-outline-variant px-2.5 py-1 rounded-full" id="cache-subanswer-badge">
+                        0 SUB-ANSWERS CACHED
+                    </span>
+</div>
+</div>
+<button class="flex items-center justify-center gap-2 border border-outline text-text-muted hover:text-error hover:border-error hover:bg-error-container/20 px-4 py-2 rounded-lg font-body-sm text-body-sm transition-all duration-300" id="clear-cache-btn">
+<span class="material-symbols-outlined text-[18px]">delete_sweep</span>
+                Clear All Cache
+            </button>
+</header>
+<!-- Table Block (Glassmorphic Container) -->
+<div class="glass-block rounded-xl overflow-hidden">
+<div class="overflow-x-auto">
+<table class="w-full text-left border-collapse">
+<thead>
+<tr class="bg-surface-container-low border-b border-glass-border">
+<th class="font-micro-label text-micro-label text-text-muted uppercase tracking-wider py-4 px-6 w-5/12">Question / Query</th>
+<th class="font-micro-label text-micro-label text-text-muted uppercase tracking-wider py-4 px-4">Docs Used</th>
+<th class="font-micro-label text-micro-label text-text-muted uppercase tracking-wider py-4 px-4">Mode</th>
+<th class="font-micro-label text-micro-label text-text-muted uppercase tracking-wider py-4 px-4 text-right">Savings</th>
+<th class="font-micro-label text-micro-label text-text-muted uppercase tracking-wider py-4 px-4">Time</th>
+<th class="font-micro-label text-micro-label text-text-muted uppercase tracking-wider py-4 px-4 text-center">Action</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-glass-border" id="cache-tbody"></tbody>
+</table>
+<div class="hidden py-16 flex-col items-center justify-center text-center opacity-60" id="cache-empty-state">
+<span class="material-symbols-outlined text-5xl text-outline-variant mb-3">layers_clear</span>
+<p class="font-body-lg text-body-lg text-text-muted">No cached queries yet.</p>
+</div>
+</div>
+<!-- Table Footer -->
+<div class="border-t border-glass-border bg-surface-container-lowest/50 px-6 py-4 flex justify-between items-center">
+<span class="font-body-sm text-body-sm text-text-muted" id="cache-count-text">Showing 0 entries</span>
+</div>
+</div>
+</main>
+<!-- Footer (Shared Component) -->
+<footer class="w-full py-8 mt-auto bg-surface-container-lowest border-t border-glass-border">
+<div class="flex flex-col md:flex-row justify-between items-center gap-gap-md px-page-margin max-w-container-max mx-auto">
+<div class="font-label-mono-bold text-label-mono-bold text-primary">
+                © 2024 Document Concierge. System v2.4.1-alpha
+            </div>
+<div class="flex flex-wrap gap-4 md:gap-8 justify-center">
+<a class="font-body-sm text-body-sm text-text-muted hover:text-primary transition-colors hover:opacity-80" href="#">Privacy Policy</a>
+<a class="font-body-sm text-body-sm text-text-muted hover:text-primary transition-colors hover:opacity-80" href="#">Terms of Service</a>
+<a class="font-body-sm text-body-sm text-text-muted hover:text-primary transition-colors hover:opacity-80" href="#">API Documentation</a>
+<a class="font-body-sm text-body-sm text-text-muted hover:text-primary transition-colors hover:opacity-80" href="#">Support</a>
+</div>
+</div>
+</footer>
+<script src="/static/app.js"></script>
+</body></html>
