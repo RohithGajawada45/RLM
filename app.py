@@ -301,6 +301,15 @@ class DocResponse(BaseModel):
 def serve_frontend():
     return FileResponse("static/index.html")
 
+# Add these three lines to handle UptimeRobot's pings
+@app.head("/")
+def uptime_ping():
+    return {"status": "alive"}
+
+@app.get("/")
+def serve_frontend():
+    return FileResponse("static/index.html")
+
 
 @app.get("/api/docs")
 def list_docs():
