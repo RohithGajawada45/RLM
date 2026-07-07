@@ -307,6 +307,7 @@ def uptime_ping():
     return {"status": "alive"}
 
 @app.get("/")
+@app.head("/")
 def serve_frontend():
     return FileResponse("static/index.html")
 
