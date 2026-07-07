@@ -1,3 +1,5 @@
+https://github.com/user-attachments/assets/4ac470e9-e13b-4dc7-bbb3-cb8bdf0de7ec
+
 # 📄 Document Concierge
 
 **A recursive-language-model document Q&A engine — upload PDFs/DOCX, ask anything, get routed, verified, cached answers.**
