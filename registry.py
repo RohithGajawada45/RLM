@@ -38,7 +38,11 @@ REGISTRY_FILE = UPLOAD_DIR / "registry.json"
 
 
 class DynamicRegistry:
-    def __init__(self, client):
+    def __init__(self, client=None):
+        # `client` here is only a fallback for local/dev use. In the
+        # multi-tenant hosted app, the uploader's OWN per-session client is
+        # passed explicitly into add_uploaded_file() so their Azure account
+        # (not the app owner's) is billed for describing their document.
         self.client = client
         self.docs: Dict[str, Dict[str, Any]] = {}
         self._lock = threading.Lock()
@@ -105,12 +109,21 @@ class DynamicRegistry:
         filename: str,
         file_bytes: bytes,
         title: Optional[str] = None,
+        client=None,
     ) -> Dict[str, Any]:
         """
         Save an uploaded file, extract its text, generate a
         description, and register it.
         Returns the registry entry.
+
+        `client` should be the uploading user's own per-session Azure
+        client, so the description LM call is billed to them, not to
+        whoever happened to start the server process.
         """
+        client = client or self.client
+        if client is None:
+            raise RuntimeError("add_uploaded_file() requires a client")
+
         with self._lock:
             doc_id = self._make_doc_id(filename, file_bytes)
 
@@ -128,9 +141,10 @@ class DynamicRegistry:
                 path.unlink(missing_ok=True)
                 raise RuntimeError(f"Failed to extract text: {e}")
 
-            # Generate rich description (one LM call)
+            # Generate rich description (one LM call, billed to `client`'s
+            # owner — see docstring above)
             description = generate_rich_description(
-                self.client,
+                client,
                 filename,
                 text,
             )

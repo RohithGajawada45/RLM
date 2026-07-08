@@ -91,34 +91,99 @@ def _exit_token_usage(token) -> None:
     _usage_ctx.reset(token)
     
 #-------------Azure Client-------------------
+#
+# NOTE ON MULTI-TENANCY:
+# This app is used by many different visitors, each supplying their OWN
+# Azure OpenAI credentials via the /static/settings.html page (see
+# user_config.py + app.py). To keep every function in this module working
+# with "whichever credentials/deployments belong to the caller", each
+# AzureOpenAI client we build carries its own config as a plain attribute
+# (`client._rlm_config`, a ClientConfig instance). Every place that used to
+# read a module-level constant (ROOT_DEPLOYMENT, SUB_DEPLOYMENT, etc.) now
+# reads it off the client that was explicitly passed in — which means it
+# works correctly even inside the ThreadPoolExecutor fan-out in
+# cross_doc.py, since `client` (and therefore its config) is passed as a
+# normal function argument, not a context/thread-global.
+#
+# The os.environ fallbacks below are ONLY used for local/dev runs where no
+# per-user config has been set.
 
-def make_azure_client() -> AzureOpenAI:
-    return AzureOpenAI(
-        azure_endpoint=os.environ["AZURE_ENDPOINT"],
-        api_key=os.environ["AZURE_API_KEY"],
-        api_version=os.environ.get("AZURE_API_VERSION", "2024-12-01-preview"),
-    )
-    
+from dataclasses import dataclass as _dataclass
+
+
+@_dataclass
+class ClientConfig:
+    root_deployment: str
+    sub_deployment: str
+    embedding_deployment: str
+    root_reasoning_effort: str
+    sub_reasoning_effort: str
 
 
 _MINI = os.environ.get("AZURE_GPT_5_MINI_DEPLOYMENT", "gpt-5-mini")
 _NANO = os.environ.get("AZURE_GPT_5_NANO_DEPLOYMENT", "gpt-5-nano")
+
+# Fallback defaults (dev-only — a real multi-user deployment always attaches
+# a ClientConfig to the client it builds, see make_azure_client() below).
 ROOT_DEPLOYMENT = os.environ.get("AZURE_ROOT_DEPLOYMENT", _MINI)
 SUB_DEPLOYMENT = os.environ.get("AZURE_SUB_DEPLOYMENT", _MINI)
-
 EMBEDDING_DEPLOYMENT = os.environ.get("EMBEDDING_DEPLOYMENT", "text-embedding-3-small")
+ROOT_REASONING_EFFORT = os.environ.get("ROOT_REASONING_EFFORT", "high")
+SUB_REASONING_EFFORT = os.environ.get("SUB_REASONING_EFFORT", "high")
 
-def embed_text(client: AzureOpenAI, text: str, deployment: str = EMBEDDING_DEPLOYMENT) -> Optional[list]:
+_DEFAULT_CONFIG = ClientConfig(
+    root_deployment=ROOT_DEPLOYMENT,
+    sub_deployment=SUB_DEPLOYMENT,
+    embedding_deployment=EMBEDDING_DEPLOYMENT,
+    root_reasoning_effort=ROOT_REASONING_EFFORT,
+    sub_reasoning_effort=SUB_REASONING_EFFORT,
+)
+
+
+def cfg(client: Optional[AzureOpenAI]) -> ClientConfig:
+    """Return the ClientConfig attached to `client`, or the process-wide
+    fallback (env-var based) if the client wasn't built with one."""
+    return getattr(client, "_rlm_config", _DEFAULT_CONFIG)
+
+
+def make_azure_client(
+    endpoint: Optional[str] = None,
+    api_key: Optional[str] = None,
+    api_version: Optional[str] = None,
+    root_deployment: Optional[str] = None,
+    sub_deployment: Optional[str] = None,
+    embedding_deployment: Optional[str] = None,
+    root_reasoning_effort: Optional[str] = None,
+    sub_reasoning_effort: Optional[str] = None,
+) -> AzureOpenAI:
+    """
+    Build an AzureOpenAI client from EXPLICIT credentials (per-user), falling
+    back to the process .env only when a value isn't supplied — which keeps
+    this usable for local single-user dev exactly as before.
+    """
+    client = AzureOpenAI(
+        azure_endpoint=endpoint or os.environ["AZURE_ENDPOINT"],
+        api_key=api_key or os.environ["AZURE_API_KEY"],
+        api_version=api_version or os.environ.get("AZURE_API_VERSION", "2024-12-01-preview"),
+    )
+    client._rlm_config = ClientConfig(
+        root_deployment=root_deployment or ROOT_DEPLOYMENT,
+        sub_deployment=sub_deployment or SUB_DEPLOYMENT,
+        embedding_deployment=embedding_deployment or EMBEDDING_DEPLOYMENT,
+        root_reasoning_effort=root_reasoning_effort or ROOT_REASONING_EFFORT,
+        sub_reasoning_effort=sub_reasoning_effort or SUB_REASONING_EFFORT,
+    )
+    return client
+
+
+def embed_text(client: AzureOpenAI, text: str, deployment: Optional[str] = None) -> Optional[list]:
+    deployment = deployment or cfg(client).embedding_deployment
     try:
         resp=client.embeddings.create(model=deployment, input=text)
         return resp.data[0].embedding
     except Exception as e:
         print(f" [embedding] failed ({type(e).__name__}): {str(e)[:120]}")
         return None
-    
-    
-ROOT_REASONING_EFFORT=os.environ.get("ROOT_REASONING_EFFORT", "high")
-SUB_REASONING_EFFORT=os.environ.get("SUB_REASONING_EFFORT", "high")
 
 #------------config-------------------
 
@@ -283,8 +348,8 @@ def llm_call(
     reasoning_effort: Optional[str] = None,
 ) -> str:
 
-    deployment = deployment or SUB_DEPLOYMENT
-    reasoning_effort = reasoning_effort or SUB_REASONING_EFFORT
+    deployment = deployment or cfg(client).sub_deployment
+    reasoning_effort = reasoning_effort or cfg(client).sub_reasoning_effort
 
     print(
         f"{Fore.CYAN} [{label}] {deployment} (effort={reasoning_effort}, "
@@ -655,7 +720,7 @@ def rlm(
             sub_prompt,
             client,
             label=label,
-            deployment=SUB_DEPLOYMENT,
+            deployment=cfg(client).sub_deployment,
         )
 
     # --- sub-RLM call: REAL recursion when depth permits, else fallback ------
@@ -694,7 +759,7 @@ def rlm(
             full_prompt,
             client,
             label=label,
-            deployment=SUB_DEPLOYMENT,
+            deployment=cfg(client).sub_deployment,
         )
 
     # --- state ← InitREPL(prompt=context); state ← AddFunction(sub_RLM) ------
@@ -748,16 +813,16 @@ def rlm(
         if verbose:
             print(
                 f"\n{Fore.YELLOW}{indent}[Iter {iteration + 1}] Root LM "
-                f"({ROOT_DEPLOYMENT})…{Style.RESET_ALL}"
+                f"({cfg(client).root_deployment})…{Style.RESET_ALL}"
             )
 
         # code ← LLM_M(hist)
         try:
             resp = _create_completion(
                 client,
-                deployment=ROOT_DEPLOYMENT,
+                deployment=cfg(client).root_deployment,
                 messages=history,
-                reasoning_effort=ROOT_REASONING_EFFORT,
+                reasoning_effort=cfg(client).root_reasoning_effort,
                 stage=stage_override or "root_lm",
             )
             lm_output = resp.choices[0].message.content or ""
@@ -921,9 +986,9 @@ def rlm(
     try:
         resp = _create_completion(
             client,
-            deployment=ROOT_DEPLOYMENT,
+            deployment=cfg(client).root_deployment,
             messages=history,
-            reasoning_effort=ROOT_REASONING_EFFORT,
+            reasoning_effort=cfg(client).root_reasoning_effort,
             stage=(
                 f"{stage_override}_fallback"
                 if stage_override

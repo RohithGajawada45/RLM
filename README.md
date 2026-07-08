@@ -175,6 +175,27 @@ This installs: `fastapi`, `uvicorn[standard]`, `python-multipart`, `python-docx`
 > - macOS: `brew install poppler`
 > - Debian/Ubuntu: `apt-get install poppler-utils`
 
+## Multi-Tenant Mode (public deployments)
+
+If you're hosting this publicly (e.g. sharing a link on social media), you do **not**
+want your own Azure key used by every visitor. As of this version, the app no longer
+runs any Azure call on a shared/global key:
+
+- Every visitor lands on **Setup** (`/static/settings.html`) and enters their **own**
+  `AZURE_ENDPOINT`, `AZURE_API_KEY`, and deployment names.
+- The server makes real, minimal test calls to Azure with those exact values before
+  accepting them. Bad/missing values are rejected with a specific reason.
+- On success, the visitor gets an HttpOnly session cookie. Their credentials live only
+  in server memory for that session (never written to disk) and expire after
+  `SESSION_TTL_SECONDS` of inactivity (default 4h, in `.env`).
+- `/api/upload` and `/api/query` — the only endpoints that call Azure — require a valid
+  session and use *that visitor's* client. If credentials aren't set or stop working,
+  those endpoints return `401` and the frontend redirects back to Setup. The app simply
+  will not run Azure calls on your behalf.
+
+The `.env` file's `AZURE_*` values are now only a fallback for local single-user
+development (running `uvicorn app:app` yourself, never touching the Setup page).
+
 ### 2. Configure environment
 
 Create a `.env` file in the project root:
@@ -195,9 +216,14 @@ CACHE_ENABLED=true
 CACHE_MAX_ENTRIES=200
 SEMANTIC_CACHE_ENABLED=true
 SEMANTIC_CACHE_THRESHOLD=0.93
+
+# How long an idle visitor session (their validated Azure credentials) is
+# kept in server memory before they must re-enter them. Seconds.
+SESSION_TTL_SECONDS=14400
 ```
 
-Only `AZURE_ENDPOINT` and `AZURE_API_KEY` are strictly required — everything else has a sane default (see [Configuration Reference](#configuration-reference)).
+These `.env` values are a **local-dev fallback only** — see [Multi-Tenant Mode](#multi-tenant-mode-public-deployments)
+above. In the public/hosted flow, each visitor supplies their own values on the Setup page instead.
 
 ### 3. Run
 

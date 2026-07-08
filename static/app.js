@@ -8,12 +8,45 @@
 
 const $ = (id) => document.getElementById(id);
 
-window.addEventListener('DOMContentLoaded', () => {
+window.addEventListener('DOMContentLoaded', async () => {
+  if ($('settings-form')) {
+    initSettingsPage();
+    return; // settings page manages its own gate state
+  }
+  const configured = await ensureConfigured();
+  if (!configured) return; // already redirected to settings
+
   if ($('doc-grid')) initLibraryPage();
   if ($('turn-history')) initAskPage();
   if ($('cache-tbody')) initCachePage();
   if ($('doc-content')) initDocumentPage();
 });
+
+// ─── Session gate ───────────────────────────────────────────────────
+//
+// Every page except settings.html requires a validated Azure session
+// before it does anything. If the visitor hasn't entered working
+// credentials yet, we send them straight to the Settings page instead of
+// letting them hit API calls that would just 401.
+
+function goToSettings() {
+  window.location.href = '/static/settings.html';
+}
+
+async function ensureConfigured() {
+  try {
+    const res = await fetch('/api/settings/status');
+    const data = await res.json();
+    if (!data.configured) {
+      goToSettings();
+      return false;
+    }
+    return true;
+  } catch {
+    goToSettings();
+    return false;
+  }
+}
 
 // ─── Shared utilities ──────────────────────────────────────────────
 
@@ -54,6 +87,7 @@ function docIconFor(filename) {
 
 async function apiGet(url) {
   const res = await fetch(url);
+  if (res.status === 401) { goToSettings(); throw new Error('Azure credentials required'); }
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.detail || `HTTP ${res.status}`);
@@ -63,6 +97,7 @@ async function apiGet(url) {
 
 async function apiDelete(url) {
   const res = await fetch(url, { method: 'DELETE' });
+  if (res.status === 401) { goToSettings(); throw new Error('Azure credentials required'); }
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.detail || `HTTP ${res.status}`);
@@ -224,6 +259,7 @@ async function uploadOne(file) {
 
   try {
     const res = await fetch('/api/upload', { method: 'POST', body: formData });
+    if (res.status === 401) { goToSettings(); return; }
     if (!res.ok) {
       const errBody = await res.json().catch(() => ({}));
       throw new Error(errBody.detail || `HTTP ${res.status}`);
@@ -297,6 +333,7 @@ async function runQuery() {
     });
     clearInterval(ticker);
 
+    if (res.status === 401) { goToSettings(); return; }
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       throw new Error(err.detail || `HTTP ${res.status}`);
@@ -822,4 +859,98 @@ function formatDateTime(iso) {
   } catch {
     return iso;
   }
+}
+// ─── Settings page (settings.html) ─────────────────────────────────
+//
+// Visitors enter their own Azure OpenAI credentials here. We send them to
+// /api/settings, which makes real test calls against Azure before saving
+// anything. Nothing is stored until it's proven to work.
+
+function initSettingsPage() {
+  refreshSettingsStatus();
+
+  const form = $('settings-form');
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    submitSettings();
+  });
+
+  const clearBtn = $('settings-clear-btn');
+  if (clearBtn) clearBtn.addEventListener('click', clearSettings);
+}
+
+async function refreshSettingsStatus() {
+  const banner = $('settings-status-banner');
+  if (!banner) return;
+  try {
+    const res = await fetch('/api/settings/status');
+    const data = await res.json();
+    if (data.configured) {
+      banner.classList.remove('hidden');
+      banner.innerHTML = `
+        <span class="material-symbols-outlined text-[#3F6B4A]" data-icon="check_circle">check_circle</span>
+        <span>Connected — using <strong>${escapeHtml(data.endpoint)}</strong>
+        (root: ${escapeHtml(data.root_deployment)}, sub: ${escapeHtml(data.sub_deployment)},
+        embeddings: ${escapeHtml(data.embedding_deployment)}). You can update your details below at any time.</span>
+      `;
+    } else {
+      banner.classList.add('hidden');
+    }
+  } catch {
+    banner.classList.add('hidden');
+  }
+}
+
+async function submitSettings() {
+  const btn = $('settings-submit-btn');
+  const errBox = $('settings-error');
+  const okBox = $('settings-success');
+
+  const payload = {
+    azure_endpoint: $('f-endpoint').value.trim(),
+    azure_api_key: $('f-api-key').value.trim(),
+    azure_api_version: $('f-api-version').value.trim() || '2024-12-01-preview',
+    azure_root_deployment: $('f-root-deployment').value.trim(),
+    azure_sub_deployment: $('f-sub-deployment').value.trim(),
+    embedding_deployment: $('f-embedding-deployment').value.trim(),
+    root_reasoning_effort: $('f-root-effort').value,
+    sub_reasoning_effort: $('f-sub-effort').value,
+  };
+
+  errBox.classList.add('hidden');
+  okBox.classList.add('hidden');
+  btn.disabled = true;
+  const originalText = btn.textContent;
+  btn.textContent = 'Testing your Azure credentials…';
+
+  try {
+    const res = await fetch('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.detail || `HTTP ${res.status}`);
+    }
+    okBox.textContent = 'Your Azure account is connected. Redirecting…';
+    okBox.classList.remove('hidden');
+    $('f-api-key').value = '';
+    setTimeout(() => { window.location.href = '/static/index.html'; }, 900);
+  } catch (e) {
+    errBox.textContent = e.message;
+    errBox.classList.remove('hidden');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = originalText;
+  }
+}
+
+async function clearSettings() {
+  try {
+    await fetch('/api/settings', { method: 'DELETE' });
+  } catch {
+    // ignore — cookie may already be gone
+  }
+  refreshSettingsStatus();
 }

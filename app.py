@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Optional, List
 from collections import OrderedDict
 
-from fastapi import FastAPI, UploadFile, File, HTTPException, Form
+from fastapi import FastAPI, UploadFile, File, HTTPException, Form, Request, Response, Depends
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -30,9 +30,7 @@ load_dotenv()
 
 # ─── Local imports ────────────────────────────────────────────────
 from rlm_core import (
-    rlm, make_azure_client, ROOT_DEPLOYMENT, SUB_DEPLOYMENT,
-    reset_token_usage, get_token_usage,
-    embed_text, EMBEDDING_DEPLOYMENT,
+    rlm, reset_token_usage, get_token_usage, embed_text, cfg,
 )
 from advanced_router import route_query_advanced
 from cross_doc import (
@@ -42,6 +40,11 @@ from cross_doc import (
 )
 from registry import DynamicRegistry
 from cache_persist import CachePersister
+import user_config
+from user_config import (
+    SESSION_COOKIE_NAME, CredentialError,
+    validate_and_build_client, create_session, get_session, clear_session,
+)
 
 
 # ─── Configuration ────────────────────────────────────────────────
@@ -117,7 +120,7 @@ def _semantic_cache_lookup(query: str, doc_ids, client) -> Optional[dict]:
     if not candidates:
         return None
 
-    query_emb = embed_text(client, query, EMBEDDING_DEPLOYMENT)
+    query_emb = embed_text(client, query, cfg(client).embedding_deployment)
     if query_emb is None:
         return None
 
@@ -263,13 +266,12 @@ async def shutdown_event():
         traceback.print_exc()
 
 
-# Initialize Azure client and registry
-print("Initializing Azure client...")
-_client = make_azure_client()
-print(f"  Root LM: {ROOT_DEPLOYMENT}")
-print(f"  Sub-LM: {SUB_DEPLOYMENT}")
+# Registry no longer needs a client at startup: reloading persisted docs
+# reuses cached descriptions (no LM call — see registry.py docstring), and
+# every code path that DOES need an LM call now receives the calling
+# visitor's own per-session client explicitly.
 print("Loading registry...")
-_registry = DynamicRegistry(_client)
+_registry = DynamicRegistry()
 print(f"  Loaded {len(_registry.docs)} document(s) on startup.")
 
 for _doc_id, _doc_entry in _registry.docs.items():
@@ -278,6 +280,27 @@ for _doc_id, _doc_entry in _registry.docs.items():
         doc_title=_doc_entry.get("title", ""),
         doc_text_preview=_doc_entry.get("text", "")[:3000],
     )
+
+
+# ─── Session dependency ───────────────────────────────────────────
+#
+# Every endpoint that calls Azure (upload, query) depends on this. It reads
+# the visitor's session cookie, looks up their validated Azure credentials,
+# and returns their per-session client. If they haven't configured working
+# credentials yet, the request is rejected with 401 and the frontend sends
+# them to /static/settings.html — the project simply will not run any Azure
+# call on the app owner's behalf.
+
+def require_session(request: Request):
+    session_id = request.cookies.get(SESSION_COOKIE_NAME)
+    record = get_session(session_id)
+    if record is None:
+        raise HTTPException(
+            status_code=401,
+            detail="No valid Azure credentials configured for this session. "
+                   "Please add your Azure OpenAI details on the Settings page.",
+        )
+    return record
 
 
 # ─── Request/response models ──────────────────────────────────────
@@ -293,6 +316,63 @@ class DocResponse(BaseModel):
     description: str
     char_count: int
     uploaded_at: str
+
+
+class SettingsRequest(BaseModel):
+    azure_endpoint: str
+    azure_api_key: str
+    azure_api_version: str = "2024-12-01-preview"
+    azure_root_deployment: str
+    azure_sub_deployment: str
+    embedding_deployment: str
+    root_reasoning_effort: str = "high"
+    sub_reasoning_effort: str = "high"
+
+
+# ─── Settings (per-visitor Azure credentials) ─────────────────────
+
+@app.post("/api/settings")
+def save_settings(payload: SettingsRequest, response: Response):
+    try:
+        client = validate_and_build_client(
+            endpoint=payload.azure_endpoint,
+            api_key=payload.azure_api_key,
+            api_version=payload.azure_api_version,
+            root_deployment=payload.azure_root_deployment,
+            sub_deployment=payload.azure_sub_deployment,
+            embedding_deployment=payload.embedding_deployment,
+            root_reasoning_effort=payload.root_reasoning_effort,
+            sub_reasoning_effort=payload.sub_reasoning_effort,
+        )
+    except CredentialError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    record = create_session(client, endpoint=payload.azure_endpoint.strip())
+    response.set_cookie(
+        key=SESSION_COOKIE_NAME,
+        value=record.session_id,
+        httponly=True,
+        samesite="lax",
+        max_age=user_config.SESSION_TTL_SECONDS,
+    )
+    return {"ok": True, **record.masked_summary()}
+
+
+@app.get("/api/settings/status")
+def settings_status(request: Request):
+    session_id = request.cookies.get(SESSION_COOKIE_NAME)
+    record = get_session(session_id)
+    if record is None:
+        return {"configured": False}
+    return record.masked_summary()
+
+
+@app.delete("/api/settings")
+def clear_settings(request: Request, response: Response):
+    session_id = request.cookies.get(SESSION_COOKIE_NAME)
+    clear_session(session_id)
+    response.delete_cookie(SESSION_COOKIE_NAME)
+    return {"cleared": True}
 
 
 # ─── Routes ───────────────────────────────────────────────────────
@@ -320,7 +400,8 @@ def list_docs():
 @app.post("/api/upload")
 async def upload_doc(
     file: UploadFile = File(...),
-    title: Optional[str] = Form(None)
+    title: Optional[str] = Form(None),
+    session=Depends(require_session),
 ):
     ext = Path(file.filename).suffix.lower()
     if ext not in ALLOWED_EXTENSIONS:
@@ -343,6 +424,7 @@ async def upload_doc(
             filename=file.filename,
             file_bytes=contents,
             title=title,
+            client=session.client,
         )
         register_doc_companies(
             doc_id=entry["id"],
@@ -472,7 +554,8 @@ def cache_delete_one(key_prefix: str):
 
 
 @app.post("/api/query")
-def run_query(req: QueryRequest):
+def run_query(req: QueryRequest, session=Depends(require_session)):
+    client = session.client
     query = req.query.strip()
     if not query:
         raise HTTPException(status_code=400, detail="Empty query.")
@@ -500,7 +583,7 @@ def run_query(req: QueryRequest):
     doc_ids, confidence, reason = route_query_advanced(
         query=query,
         docs_catalog=catalog,
-        client=_client,
+        client=client,
         verbose=True,
     )
     route_elapsed = time.time() - route_t0
@@ -543,7 +626,7 @@ def run_query(req: QueryRequest):
     semantic_match_info = None
 
     if cached is None:
-        cached = _semantic_cache_lookup(query, doc_ids, _client)
+        cached = _semantic_cache_lookup(query, doc_ids, client)
         if cached is not None:
             semantic_match_info = cached.pop("_semantic_match", None)
 
@@ -592,7 +675,7 @@ def run_query(req: QueryRequest):
         answer = rlm(
             context=doc["text"],
             query=query,
-            client=_client,
+            client=client,
             depth=0,
             verbose=True,
         )
@@ -607,7 +690,7 @@ def run_query(req: QueryRequest):
             doc_id=doc_ids[0],
             doc_title=doc["title"],
             sub_answer=answer,
-            client=_client,
+            client=client,
         )
         print(f"[sub-cache] stored answer for '{doc['title']}' — reusable by future multi-doc queries")
 
@@ -616,7 +699,7 @@ def run_query(req: QueryRequest):
             query=query,
             doc_ids=doc_ids,
             doc_lookup=_registry.docs,
-            client=_client,
+            client=client,
             verbose=True,
         )
         answer = result["final_answer"]
@@ -631,7 +714,7 @@ def run_query(req: QueryRequest):
     # —— CACHE WRITE ————————————————————————————————————————————
     query_embedding = None
     if SEMANTIC_CACHE_ENABLED:
-        query_embedding = embed_text(_client, query, EMBEDDING_DEPLOYMENT)
+        query_embedding = embed_text(client, query, cfg(client).embedding_deployment)
 
     _cache_put(cache_key, {
         "query": query,

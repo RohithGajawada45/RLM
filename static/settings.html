@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Document Concierge - Settings</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,500&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<script src="/static/theme.js"></script>
+<link href="/static/theme.css" rel="stylesheet"/>
+</head>
+<body class="bg-background text-on-surface font-body-lg min-h-screen flex flex-col relative">
+<!-- TopNavBar -->
+<nav class="bg-background/95 fixed top-0 w-full z-50 border-b border-glass-border">
+<div class="flex items-end justify-between px-page-margin h-16 max-w-container-max mx-auto">
+<div class="font-headline-lg text-headline-lg font-semibold tracking-tight text-on-background pb-3">
+                Document Concierge
+            </div>
+<div class="hidden md:flex items-end gap-1 -mb-px">
+<a class="folder-tab px-4 py-2.5 font-body-lg text-[14px] text-text-muted hover:text-primary transition-colors" href="/static/index.html">Library</a>
+<a class="folder-tab px-4 py-2.5 font-body-lg text-[14px] text-text-muted hover:text-primary transition-colors" href="/static/ask.html">Ask</a>
+<a class="folder-tab px-4 py-2.5 font-body-lg text-[14px] text-text-muted hover:text-primary transition-colors" href="/static/cache.html">Cache</a>
+<a class="folder-tab active px-4 py-2.5 font-headline-md text-[15px] font-semibold text-on-surface border-l border-r border-t border-glass-border" href="/static/settings.html">Setup</a>
+</div>
+<div class="flex items-center gap-gap-md text-text-muted font-body-lg text-body-lg pb-3">
+<div class="w-7 h-7 rounded-full bg-primary/15 border border-primary/30 ml-1"></div>
+</div>
+</div>
+</nav>
+<!-- Main Content Canvas -->
+<main class="flex-1 w-full max-w-container-max mx-auto px-page-margin pt-24 pb-32 flex flex-col gap-5">
+
+<section class="glass-panel rounded p-7 flex flex-col gap-2">
+<h1 class="font-headline-lg text-headline-lg text-on-surface">Connect your Azure OpenAI account</h1>
+<p class="font-body-lg text-body-lg text-text-muted max-w-2xl">
+This app runs entirely on <strong>your own</strong> Azure OpenAI resource — nothing is billed
+to the app owner. Paste in your Azure endpoint, key, and deployment names below.
+We test them live against Azure before saving anything, and your key is kept only in
+this server's memory for your session — never written to disk, never shown to other visitors.
+</p>
+</section>
+
+<div class="hidden items-start gap-3 p-4 bg-surface-container-low rounded border border-glass-border font-body-sm text-body-sm text-on-surface" id="settings-status-banner"></div>
+
+<section class="glass-panel rounded p-7 flex flex-col gap-5">
+<form class="flex flex-col gap-5" id="settings-form">
+
+<div class="flex flex-col gap-4">
+<h2 class="font-headline-md text-headline-md text-on-surface">Connection</h2>
+
+<label class="flex flex-col gap-1.5">
+<span class="font-label-mono-bold text-label-mono-bold text-text-muted">AZURE_ENDPOINT</span>
+<input class="w-full bg-cream border border-glass-border rounded p-3 font-data-num text-data-num text-on-surface placeholder:text-text-muted focus:border-primary focus:ring-4 focus:ring-accent-glow focus:outline-none transition-all" id="f-endpoint" placeholder="https://your-resource.openai.azure.com/" required="" type="text"/>
+</label>
+
+<label class="flex flex-col gap-1.5">
+<span class="font-label-mono-bold text-label-mono-bold text-text-muted">AZURE_API_KEY</span>
+<input class="w-full bg-cream border border-glass-border rounded p-3 font-data-num text-data-num text-on-surface placeholder:text-text-muted focus:border-primary focus:ring-4 focus:ring-accent-glow focus:outline-none transition-all" id="f-api-key" placeholder="your-key-here" required="" type="password"/>
+</label>
+
+<label class="flex flex-col gap-1.5">
+<span class="font-label-mono-bold text-label-mono-bold text-text-muted">AZURE_API_VERSION</span>
+<input class="w-full bg-cream border border-glass-border rounded p-3 font-data-num text-data-num text-on-surface placeholder:text-text-muted focus:border-primary focus:ring-4 focus:ring-accent-glow focus:outline-none transition-all" id="f-api-version" value="2024-12-01-preview" type="text"/>
+</label>
+</div>
+
+<div class="flex flex-col gap-4 pt-2 border-t border-glass-border">
+<h2 class="font-headline-md text-headline-md text-on-surface">Deployments</h2>
+
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+<label class="flex flex-col gap-1.5">
+<span class="font-label-mono-bold text-label-mono-bold text-text-muted">AZURE_ROOT_DEPLOYMENT</span>
+<input class="w-full bg-cream border border-glass-border rounded p-3 font-data-num text-data-num text-on-surface placeholder:text-text-muted focus:border-primary focus:ring-4 focus:ring-accent-glow focus:outline-none transition-all" id="f-root-deployment" placeholder="gpt-5-mini" required="" type="text" value="gpt-5-mini"/>
+</label>
+
+<label class="flex flex-col gap-1.5">
+<span class="font-label-mono-bold text-label-mono-bold text-text-muted">AZURE_SUB_DEPLOYMENT</span>
+<input class="w-full bg-cream border border-glass-border rounded p-3 font-data-num text-data-num text-on-surface placeholder:text-text-muted focus:border-primary focus:ring-4 focus:ring-accent-glow focus:outline-none transition-all" id="f-sub-deployment" placeholder="gpt-5-mini" required="" type="text" value="gpt-5-mini"/>
+</label>
+
+<label class="flex flex-col gap-1.5 md:col-span-2">
+<span class="font-label-mono-bold text-label-mono-bold text-text-muted">EMBEDDING_DEPLOYMENT</span>
+<input class="w-full bg-cream border border-glass-border rounded p-3 font-data-num text-data-num text-on-surface placeholder:text-text-muted focus:border-primary focus:ring-4 focus:ring-accent-glow focus:outline-none transition-all" id="f-embedding-deployment" placeholder="text-embedding-3-small" required="" type="text" value="text-embedding-3-small"/>
+</label>
+</div>
+</div>
+
+<div class="flex flex-col gap-4 pt-2 border-t border-glass-border">
+<h2 class="font-headline-md text-headline-md text-on-surface">Reasoning effort</h2>
+
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+<label class="flex flex-col gap-1.5">
+<span class="font-label-mono-bold text-label-mono-bold text-text-muted">ROOT_REASONING_EFFORT</span>
+<select class="w-full bg-cream border border-glass-border rounded p-3 font-data-num text-data-num text-on-surface focus:border-primary focus:ring-4 focus:ring-accent-glow focus:outline-none transition-all" id="f-root-effort">
+<option value="minimal">minimal</option>
+<option value="low">low</option>
+<option selected="" value="high">high</option>
+</select>
+</label>
+
+<label class="flex flex-col gap-1.5">
+<span class="font-label-mono-bold text-label-mono-bold text-text-muted">SUB_REASONING_EFFORT</span>
+<select class="w-full bg-cream border border-glass-border rounded p-3 font-data-num text-data-num text-on-surface focus:border-primary focus:ring-4 focus:ring-accent-glow focus:outline-none transition-all" id="f-sub-effort">
+<option value="minimal">minimal</option>
+<option value="low">low</option>
+<option selected="" value="high">high</option>
+</select>
+</label>
+</div>
+</div>
+
+<div class="hidden p-3 bg-error/10 border border-error/30 rounded font-body-sm text-body-sm text-error" id="settings-error"></div>
+<div class="hidden p-3 bg-[#3F6B4A]/10 border border-[#3F6B4A]/30 rounded font-body-sm text-body-sm text-[#3F6B4A]" id="settings-success"></div>
+
+<div class="flex items-center gap-3 pt-2">
+<button class="bg-primary text-on-primary font-headline-md text-headline-md px-6 py-2.5 rounded shadow-sm hover:bg-primary-container active:scale-95 transition-all disabled:opacity-50" id="settings-submit-btn" type="submit">
+                        Test &amp; Save
+                    </button>
+<button class="text-text-muted hover:text-error font-body-lg text-body-lg px-4 py-2.5 rounded transition-all" id="settings-clear-btn" type="button">
+                        Disconnect
+                    </button>
+</div>
+</form>
+</section>
+
+<section class="glass-panel rounded p-7 flex flex-col gap-2">
+<h2 class="font-headline-md text-headline-md text-on-surface">Where do I get these?</h2>
+<p class="font-body-sm text-body-sm text-text-muted">
+In the Azure Portal, open your Azure OpenAI resource → <strong>Keys and Endpoint</strong> for
+AZURE_ENDPOINT / AZURE_API_KEY, and <strong>Model deployments</strong> for your deployment names.
+You'll need one chat-completion deployment (e.g. gpt-5-mini) and one embeddings deployment
+(e.g. text-embedding-3-small). Your key is only used to call your own Azure resource on your
+behalf — it is never persisted to disk and is dropped from memory after a few hours of inactivity
+or when you click Disconnect.
+</p>
+</section>
+
+</main>
+<!-- Footer -->
+<footer class="bg-surface-container-lowest w-full py-8 mt-auto border-t border-glass-border">
+<div class="flex flex-col md:flex-row justify-between items-center gap-gap-md px-page-margin max-w-container-max mx-auto">
+<div class="font-label-mono-bold text-label-mono-bold text-primary">
+                © 2024 Document Concierge · System v2.4.1-alpha
+            </div>
+</div>
+</footer>
+<script src="/static/app.js"></script>
+</body></html>

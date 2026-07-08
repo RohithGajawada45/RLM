@@ -46,7 +46,7 @@ from pathlib import Path
 from rlm_core import (
     rlm, llm_call,
     get_token_usage, _enter_token_usage, _exit_token_usage,
-    embed_text, EMBEDDING_DEPLOYMENT,
+    embed_text, cfg,
 )
 from cache_persist import CachePersister
 
@@ -269,7 +269,7 @@ def _sub_cache_get(query: str, doc_id: str, client=None) -> Optional[dict]:
     if not candidates:
         return None
 
-    q_emb = embed_text(client, normalized, EMBEDDING_DEPLOYMENT)
+    q_emb = embed_text(client, normalized, cfg(client).embedding_deployment)
     if q_emb is None:
         return None
 
@@ -296,7 +296,7 @@ def _sub_cache_put(query: str, doc_id: str, doc_title: str,
 
     emb = None
     if client is not None:
-        emb = embed_text(client, normalized, EMBEDDING_DEPLOYMENT)
+        emb = embed_text(client, normalized, cfg(client).embedding_deployment)
 
     with _SUB_CACHE_LOCK:
         _SUB_CACHE[key] = {
